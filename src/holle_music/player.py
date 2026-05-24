@@ -24,6 +24,8 @@ class Player:
         self._current_index = 0
         self._initialized = False
         self._on_song_change_callbacks: list = []
+        self._spectrum_data: list[list[float]] = []
+        self._spectrum_duration: float = 0.0
 
     def _ensure_init(self) -> None:
         if not self._initialized:
@@ -91,10 +93,11 @@ class Player:
         if self.current_song is None:
             return
 
+        path = str(self.current_song.path)
+
         if self._state == PlayerState.PAUSED:
             pygame.mixer.music.unpause()
         else:
-            path = str(self.current_song.path)
             if not Path(path).exists():
                 return
             pygame.mixer.music.load(path)
@@ -102,6 +105,56 @@ class Player:
 
         self._state = PlayerState.PLAYING
         self._notify_song_change()
+        self._load_spectrum(path)
+
+    def _load_spectrum(self, path: str) -> None:
+        """预计算音频频谱数据."""
+        try:
+            import numpy as np
+            import librosa
+            audio, sr = librosa.load(path, sr=22050, duration=120.0)
+            if len(audio) < 2048:
+                return
+
+            chunk_size = 2048
+            hop = max(1, (len(audio) - chunk_size) // 200)
+
+            self._spectrum_data = []
+            self._spectrum_duration = len(audio) / sr
+
+            for i in range(0, len(audio) - chunk_size, hop):
+                if len(self._spectrum_data) >= 200:
+                    break
+                chunk = audio[i:i + chunk_size]
+                fft = np.abs(np.fft.rfft(chunk * np.hanning(chunk_size)))
+                num_bands = 32
+                band_edges = np.logspace(
+                    0, np.log10(max(1, len(fft) - 1)), num_bands + 1
+                ).astype(int)
+                bands = [
+                    float(np.mean(fft[band_edges[j]:band_edges[j + 1]]))
+                    for j in range(num_bands)
+                ]
+                self._spectrum_data.append(bands)
+        except ImportError:
+            self._spectrum_data = []
+        except Exception:
+            self._spectrum_data = []
+
+    def get_current_spectrum(self) -> list[float]:
+        """返回当前播放位置的频谱数据 (32 个频段)."""
+        if not self._spectrum_data or not self._initialized:
+            return [0.0] * 32
+        try:
+            import pygame
+            pos_ms = pygame.mixer.music.get_pos()
+            if pos_ms < 0:
+                return [0.0] * 32
+            ratio = (pos_ms / 1000.0) / self._spectrum_duration if self._spectrum_duration > 0 else 0
+            idx = min(int(ratio * len(self._spectrum_data)), len(self._spectrum_data) - 1)
+            return self._spectrum_data[idx]
+        except Exception:
+            return [0.0] * 32
 
     def pause(self) -> None:
         if self._state != PlayerState.PLAYING:

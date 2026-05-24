@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git *)",
+      "Bash(pip install *)",
+      "Bash(python *)",
+      "Bash(pytest tests/ -v)",
+      "Bash(timeout 3 hollemusic)",
+      "Bash(pip uninstall *)",
+      "Bash(rm -rf \"E:/Anaconda/Lib/site-packages/~olle-music\")",
+      "Bash(rm -f \"E:/Anaconda/Scripts/hollemusic.exe\")",
+      "Bash(PYTHONPATH=\"src\" python -m pytest tests/ -v)",
+      "Bash(PYTHONPATH=\"src\" python -c \"from holle_music.player import Player; p = Player\\(\\); print\\('Player OK'\\); print\\('Has get_current_spectrum:', hasattr\\(p, 'get_current_spectrum'\\)\\); from holle_music.widgets import Visualizer; print\\('Has set_spectrum_source:', hasattr\\(Visualizer, 'set_spectrum_source'\\)\\)\")"
+    ]
+  }
+}

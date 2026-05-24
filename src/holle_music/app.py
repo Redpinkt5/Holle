@@ -199,7 +199,8 @@ class HolleMusicApp(App):
 
     def on_mount(self) -> None:
         self.title = "Holle Music"
-        self.sub_title = "终端音乐播放器"
+        viz = self.query_one("#visualizer", Visualizer)
+        viz.set_spectrum_source(self.player.get_current_spectrum)
 
     def _on_song_changed(self, song: Song | None) -> None:
         if song is not None:
@@ -322,7 +323,7 @@ class HolleMusicApp(App):
         playlist_panel = self.query_one("#playlist-panel", PlaylistPanel)
         playlist_panel.load_songs(playlist.songs)
         self.player.load_playlist(playlist.songs)
-        self.title = f"Holle Music - {playlist.name}"
+        self.title = "Holle Music"
         self.notify(f"已加载歌单: {playlist.name} ({len(playlist)} 首)", title="歌单")
 
 

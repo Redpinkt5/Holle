@@ -110,44 +110,67 @@ class Controls(Container):
 
 
 class Visualizer(Static):
-    """歌曲律动面板 — ASCII 条形频谱可视化."""
+    """歌曲律动面板 — ASCII 条形频谱可视化，跟随真实音频频率."""
 
     BORDER_TITLE = "歌曲律动"
 
-    _bars: int = 16
+    _bars: int = 32
     _timer_handle: object | None = None
+    _get_spectrum: object = None  # callable returning list[float]
 
     def compose(self) -> ComposeResult:
-        yield Static(self._render_bars([0] * self._bars), id="viz-content")
+        yield Static("", id="viz-content")
 
     def on_mount(self) -> None:
         self.styles.border = ("solid", "white")
         self.styles.content_align = ("center", "middle")
+        self.styles.padding = 0
+
+    def set_spectrum_source(self, source) -> None:
+        """设置频谱数据源 (callable, 返回 32 个频段值)."""
+        self._get_spectrum = source
 
     def start(self) -> None:
         """启动频谱动画定时器."""
-        self._timer_handle = self.set_interval(0.1, self._update_bars)
+        self._timer_handle = self.set_interval(0.08, self._update_bars)
 
     def stop(self) -> None:
         """停止频谱动画."""
         if self._timer_handle is not None:
             self._timer_handle.stop()
             self._timer_handle = None
+        content = self.query_one("#viz-content", Static)
+        content.update("")
 
-    def _render_bars(self, values: list[int]) -> str:
-        """将数值数组渲染为 ASCII 条形图."""
-        chars = "▁▂▃▄▅▆▇█"
-        max_val = max(values) if max(values) > 0 else 8
+    def _render_bars(self, values: list[float]) -> str:
+        """将频谱数据渲染为竖向填满的 ASCII 条形图."""
+        chars = " ▁▂▃▄▅▆▇█"
+        if not values or max(values) <= 0:
+            return ""
+        # 归一化到 0–8
+        max_val = max(values)
+        normalized = [min(8, int(v / max_val * 8)) for v in values]
+        # 渲染多行（从上到下），填满高度
         lines = []
-        for v in values:
-            idx = min(int(v / max_val * (len(chars) - 1)), len(chars) - 1)
-            lines.append(chars[idx] * 2)
-        return " ".join(lines)
+        for level in range(8, 0, -1):
+            row = ""
+            for v in normalized:
+                if v >= level:
+                    row += chars[level] * 2
+                else:
+                    row += "  "
+            lines.append(row)
+        return "\n".join(lines)
 
     def _update_bars(self) -> None:
-        """随机生成频谱数据并更新显示."""
-        import random
-        values = [random.randint(1, 10) for _ in range(self._bars)]
+        """从数据源获取频谱并更新显示."""
+        if self._get_spectrum is not None:
+            try:
+                values = self._get_spectrum()
+            except Exception:
+                values = [0.0] * self._bars
+        else:
+            values = [0.0] * self._bars
         content = self.query_one("#viz-content", Static)
         content.update(self._render_bars(values))
 
