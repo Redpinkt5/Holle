@@ -1,81 +1,107 @@
-这是一个本地命令行音乐播放台项目，界面类似于claudecode终端，可以播放本地音乐和各地电台
+# Holle Music
 
+一个终端命令行音乐播放器，界面类似 Claude Code 终端风格。支持播放本地音乐（MP3、FLAC 等）、AI 聊天解歌、实时频谱可视化、随机/顺序/循环播放模式。
 
+## 功能特点
 
-整体风格要求
-深色主题：纯黑色背景，白色文字和边框
-模拟复古终端 / 命令行界面风格
-所有元素使用 Textual 的组件实现，不需要任何图片资源
-界面有最外层的边框包裹
-整体风格简洁、科技感强，完全符合命令行软件的视觉特征
-精确布局结构（使用 Textual Grid 布局）
-整体界面分为 3 行 3 列的网格布局：
-plaintext
-行1: 专辑封面 | 歌词 | 播放列表（高度占比45%）
-行2: 播放控制 | 歌曲律动 | 播放列表（高度占比45%）
-行3: 命令行输入栏（高度占比10%，横跨三列）
-各区域详细实现要求
-专辑封面区域（左上）
-正方形面板，带白色边框
-面板标题："专辑封面"
-面板内容区域居中显示占位符文字 "暂无封面"
-占 1 行 1 列
-歌词区域（中上）
-矩形面板，带白色边框
-面板标题："歌词"
-面板内容区域居中显示占位符文字 "暂无歌词"
-占 1 行 1 列
-播放列表区域（右侧）
-竖长面板，带白色边框
-面板标题："播放列表"
-面板内容区域显示示例歌曲列表（3-5 首示例歌曲）
-支持上下滚动查看更多歌曲
-跨 2 行 1 列
-播放控制区域（左下）
-无外边框的容器
-上半部分水平排列三个播放控制按钮：
-左箭头："◀" 上一曲
-双竖线："⏸" 播放 / 暂停
-右箭头："▶" 下一曲
-按钮样式：白色文字，黑色背景，选中时有高亮效果
-下半部分是一个带边框的按钮："歌曲信息"
-占 1 行 1 列
-歌曲律动区域（中下）
-矩形面板，带白色边框
-面板标题："歌曲律动"
-面板内容区域显示模拟的音频频谱（使用 Textual 的条形图或简单的 ASCII 字符实现）
-占 1 行 1 列
-命令行输入区域（最底部）
-横跨整个界面宽度的输入框
-输入框上方有提示文字："命令行，可以让 AI 解说歌曲和寻找相似歌曲"
-支持用户输入命令并回车执行
-占 1 行 3 列
-技术要求
-使用 Python 3.10+ 和 Textual 0.40+ 库实现
-严格使用 Textual 的 Grid 布局系统，确保各区域比例精确
-所有组件都使用 Textual 原生组件，不引入额外依赖
-添加基本的键盘快捷键支持：
-空格键：播放 / 暂停
-左箭头：上一曲
-右箭头：下一曲
-Tab 键：在组件间切换焦点
-代码结构清晰，添加必要的注释
-确保界面在不同终端尺寸下能够自适应调整
-不需要实现实际的音频播放功能，只需要完整的 UI 界面和交互框架
-额外要求
-不要添加任何设计稿中没有的元素
-严格保持各区域的边框样式和文字内容
-整体间距和比例尽量与设计稿一致
-确保所有文字清晰可见，对比度足够
-提供完整的运行说明和依赖安装命令
-输出要求
-生成一个完整的 Python 文件，文件名：terminal_music_player.py
-在代码开头添加依赖安装说明
-在代码末尾添加运行说明
-确保代码可以直接复制粘贴运行，没有语法错误
+- 🎵 播放本地音乐（MP3、FLAC 等格式）
+- 🤖 AI 聊天（支持联网搜索，自动解说歌曲背景）
+- 📊 实时音频频谱可视化
+- 🎨 多种颜色主题（`/color` 命令切换）
+- 🎚️ 8 段均衡器
+- 🔀 随机 / 顺序 / 单曲循环 播放模式
+- 🖼️ 自动提取并显示专辑封面
 
+## 安装方式
 
+### 方式一：有 Python 环境（推荐）
 
+```bash
+pip install holle-music
+Holle
+```
 
-用户可以创建文件夹，也就是歌单，此播放器可以识别MP3，flac等格式，用户可以在命令行里选择歌单并播放
-想要使用时，命令行里输入hollemusic，就可以进入软件
+### 方式二：没有 Python 环境（使用 uv）
+
+`uv` 是一个单文件 Python 包管理器，不需要预先安装 Python：
+
+**Windows:**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv tool install holle-music
+Holle
+```
+
+**macOS / Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install holle-music
+Holle
+```
+
+### 方式三：独立可执行文件（无需任何环境）
+
+从 [Releases](https://github.com/Redpinkt5/Holle/releases) 下载对应系统的可执行文件：
+
+- **Windows**: 下载 `hollemusic.exe`，双击运行
+- **macOS**: 下载 `hollemusic`，`chmod +x hollemusic` 后运行
+- **Linux**: 下载 `hollemusic`，`chmod +x hollemusic` 后运行
+
+### 方式四：从源码运行
+
+```bash
+git clone https://github.com/Redpinkt5/Holle.git
+cd Holle
+pip install -e .
+Holle
+```
+
+## 使用说明
+
+启动后进入 TUI 界面，常用操作：
+
+| 按键 | 功能 |
+|------|------|
+| `空格` | 播放 / 暂停 |
+| `←` / `b` | 上一曲 |
+| `→` / `n` | 下一曲 |
+| `Tab` | 切换焦点 |
+
+命令行输入区支持以下命令：
+
+| 命令 | 说明 |
+|------|------|
+| `/play <歌名>` | 播放指定歌曲 |
+| `/pause` | 暂停 |
+| `/next` | 下一曲 |
+| `/prev` | 上一曲 |
+| `/volume <0-100>` | 调节音量 |
+| `/color <颜色>` | 切换主题色（pink / blue / red / green / yellow / purple / orange / gray / brown / black / white / colorful） |
+| `/search <关键词>` | 搜索歌曲 |
+| `/scan <路径>` | 扫描文件夹添加到播放列表 |
+| `/help` | 查看帮助 |
+| `/quit` | 退出 |
+
+## 打包为可执行文件
+
+如果你想自己打包独立可执行文件：
+
+```bash
+pip install pyinstaller
+python scripts/build-exe.py
+```
+
+打包后的文件位于 `dist/hollemusic.exe`（Windows）或 `dist/hollemusic`（macOS/Linux）。
+
+## 技术栈
+
+- [Textual](https://textual.textualize.io/) — TUI 框架
+- [pygame](https://www.pygame.org/) — 音频播放
+- [mutagen](https://mutagen.readthedocs.io/) — 音频元数据读取
+- [librosa](https://librosa.org/) — 音频频谱分析
+- [Pillow](https://pillow.readthedocs.io/) — 专辑封面处理
+- OpenAI API / SiliconFlow — AI 对话
+
+## License
+
+MIT License

@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_SKIP_AUTO_UPDATE": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(git init *)",
@@ -13,7 +16,29 @@
       "Bash(rm -rf \"E:/Anaconda/Lib/site-packages/~olle-music\")",
       "Bash(rm -f \"E:/Anaconda/Scripts/hollemusic.exe\")",
       "Bash(PYTHONPATH=\"src\" python -m pytest tests/ -v)",
-      "Bash(PYTHONPATH=\"src\" python -c \"from holle_music.player import Player; p = Player\\(\\); print\\('Player OK'\\); print\\('Has get_current_spectrum:', hasattr\\(p, 'get_current_spectrum'\\)\\); from holle_music.widgets import Visualizer; print\\('Has set_spectrum_source:', hasattr\\(Visualizer, 'set_spectrum_source'\\)\\)\")"
+      "Bash(PYTHONPATH=\"src\" python -c \"from holle_music.player import Player; p = Player\\(\\); print\\('Player OK'\\); print\\('Has get_current_spectrum:', hasattr\\(p, 'get_current_spectrum'\\)\\); from holle_music.widgets import Visualizer; print\\('Has set_spectrum_source:', hasattr\\(Visualizer, 'set_spectrum_source'\\)\\)\")",
+      "Bash(where hollemusic *)",
+      "Bash(hollemusic --help)",
+      "Bash(dir \"E:\\\\DDDESKKKK\\\\holle_music\\\\models\\\\logs\\\\\" 2>/dev/null || echo \"logs dir not found\")",
+      "WebSearch",
+      "WebFetch(domain:docs.bigmodel.cn)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(taskkill /F /IM python.exe)",
+      "Bash(where tmux *)",
+      "Bash(echo \"exit: $?\")",
+      "Read(//usr/bin/**)",
+      "Read(//c/Program Files/Git/usr/bin/**)",
+      "Bash(PYTHONPATH=src python -c ' *)",
+      "Bash(cat pyproject.toml)",
+      "Bash(cat setup.cfg)",
+      "Bash(PYTHONPATH=\"src\" python -c \"from holle_music.app import HolleMusicApp; print\\('OK'\\)\")",
+      "Bash(PYTHONPATH=\"src\" python -c \"from holle_music.app import HolleMusicApp; app = HolleMusicApp\\(\\); app.run\\(\\)\")",
+      "Bash(PYTHONPATH=\"src\" python -c \"from holle_music.widgets import TruncatedStatic; print\\('TruncatedStatic OK'\\)\")",
+      "Bash(twine check *)",
+      "Bash(powershell.exe *)",
+      "Bash(claude --version)",
+      "Bash(npm --version)",
+      "WebFetch(domain:pypi.org)"
     ]
   }
 }

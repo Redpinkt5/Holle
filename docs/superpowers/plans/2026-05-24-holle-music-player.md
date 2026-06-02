@@ -69,7 +69,7 @@ dependencies = [
 ]
 
 [project.scripts]
-hollemusic = "holle_music.app:main"
+Holle = "holle_music.app:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0.0", "pytest-asyncio>=0.23.0"]
@@ -1531,7 +1531,7 @@ Expected: App 创建成功 (注意：此步不启动 GUI，仅验证导入和实
 - [ ] **Step 3: 运行应用进行手动验证**
 
 ```bash
-hollemusic
+Holle
 ```
 手动检查:
 - 黑色背景，白色边框的 3×3 网格布局
@@ -1573,7 +1573,7 @@ Expected: 显示 Textual 应用帮助 (或直接启动 GUI)
 
 - [ ] **Step 3: 端到端功能清单验证**
 
-在 `hollemusic` 运行中验证以下功能:
+在 `Holle` 运行中验证以下功能:
 
 | 功能 | 操作 | 预期结果 |
 |------|------|----------|

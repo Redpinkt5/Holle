@@ -1,8 +1,10 @@
 """音频播放引擎 — 基于 pygame.mixer 的播放控制."""
 
+import time
 from enum import Enum, auto
 from pathlib import Path
 from holle_music.models import Song
+from holle_music.spectrum import SpectrumAnalyzer
 
 
 class PlayerState(Enum):
@@ -19,18 +21,28 @@ class Player:
 
     def __init__(self) -> None:
         self._state = PlayerState.STOPPED
-        self._volume = 1.0
+        self._volume = 0.20
         self._playlist: list[Song] = []
         self._current_index = 0
         self._initialized = False
         self._on_song_change_callbacks: list = []
-        self._spectrum_data: list[list[float]] = []
-        self._spectrum_duration: float = 0.0
+        self._analyzer: SpectrumAnalyzer | None = None
+        self._play_start: float = 0.0
+        self._paused_at: float = 0.0
+        self._play_mode: str = "sequential"
+
+    def set_play_mode(self, mode: str) -> None:
+        self._play_mode = mode
+
+    @property
+    def play_mode(self) -> str:
+        return self._play_mode
 
     def _ensure_init(self) -> None:
         if not self._initialized:
             import pygame  # lazy import to avoid forcing pygame init in tests
             pygame.mixer.init()
+            pygame.mixer.music.set_volume(self._volume)
             self._initialized = True
 
     @property
@@ -97,64 +109,65 @@ class Player:
 
         if self._state == PlayerState.PAUSED:
             pygame.mixer.music.unpause()
+            self._play_start = time.monotonic() - self._paused_at
+            self._state = PlayerState.PLAYING
         else:
             if not Path(path).exists():
                 return
+            pygame.mixer.music.stop()
             pygame.mixer.music.load(path)
             pygame.mixer.music.play()
-
-        self._state = PlayerState.PLAYING
-        self._notify_song_change()
-        self._load_spectrum(path)
+            pygame.mixer.music.set_volume(self._volume)
+            self._play_start = time.monotonic()
+            self._state = PlayerState.PLAYING
+            self._notify_song_change()
+            # Load spectrum in background to avoid blocking playback
+            import threading
+            threading.Thread(target=self._load_spectrum, args=(path,), daemon=True).start()
 
     def _load_spectrum(self, path: str) -> None:
-        """预计算音频频谱数据."""
+        """Load audio file into spectrum analyzer."""
+        self._ensure_init()
         try:
-            import numpy as np
-            import librosa
-            audio, sr = librosa.load(path, sr=22050, duration=120.0)
-            if len(audio) < 2048:
-                return
-
-            chunk_size = 2048
-            hop = max(1, (len(audio) - chunk_size) // 200)
-
-            self._spectrum_data = []
-            self._spectrum_duration = len(audio) / sr
-
-            for i in range(0, len(audio) - chunk_size, hop):
-                if len(self._spectrum_data) >= 200:
-                    break
-                chunk = audio[i:i + chunk_size]
-                fft = np.abs(np.fft.rfft(chunk * np.hanning(chunk_size)))
-                num_bands = 32
-                band_edges = np.logspace(
-                    0, np.log10(max(1, len(fft) - 1)), num_bands + 1
-                ).astype(int)
-                bands = [
-                    float(np.mean(fft[band_edges[j]:band_edges[j + 1]]))
-                    for j in range(num_bands)
-                ]
-                self._spectrum_data.append(bands)
-        except ImportError:
-            self._spectrum_data = []
+            if self._analyzer is None:
+                self._analyzer = SpectrumAnalyzer()
+            self._analyzer.load(path)
         except Exception:
-            self._spectrum_data = []
+            self._analyzer = None
+
+    def get_playback_position_ms(self) -> float:
+        """Return current playback position in milliseconds (time-based)."""
+        if self._state == PlayerState.PLAYING:
+            return (time.monotonic() - self._play_start) * 1000.0
+        elif self._state == PlayerState.PAUSED:
+            return self._paused_at * 1000.0
+        return 0.0
 
     def get_current_spectrum(self) -> list[float]:
-        """返回当前播放位置的频谱数据 (32 个频段)."""
-        if not self._spectrum_data or not self._initialized:
-            return [0.0] * 32
+        """Return current playback spectrum (24 bands, 0.0-1.0)."""
+        if self._analyzer is None or not self._analyzer.is_loaded:
+            return [0.0] * 24
         try:
-            import pygame
-            pos_ms = pygame.mixer.music.get_pos()
-            if pos_ms < 0:
-                return [0.0] * 32
-            ratio = (pos_ms / 1000.0) / self._spectrum_duration if self._spectrum_duration > 0 else 0
-            idx = min(int(ratio * len(self._spectrum_data)), len(self._spectrum_data) - 1)
-            return self._spectrum_data[idx]
+            pos_ms = self.get_playback_position_ms()
+            return self._analyzer.get_spectrum(float(pos_ms), self.is_playing)
         except Exception:
-            return [0.0] * 32
+            return [0.0] * 24
+
+    def has_ended(self) -> bool:
+        """Check if the current song has finished playing."""
+        if self._state != PlayerState.PLAYING:
+            return False
+        song = self.current_song
+        if song is None:
+            return False
+        # Primary: if mixer reports not busy, audio definitely stopped
+        import pygame
+        if self._initialized and not pygame.mixer.music.get_busy():
+            return True
+        if song.duration <= 0:
+            return False
+        elapsed = self.get_playback_position_ms() / 1000.0
+        return elapsed >= song.duration
 
     def pause(self) -> None:
         if self._state != PlayerState.PLAYING:
@@ -162,13 +175,35 @@ class Player:
         self._ensure_init()
         import pygame
         pygame.mixer.music.pause()
+        self._paused_at = time.monotonic() - self._play_start
         self._state = PlayerState.PAUSED
+
+    def seek(self, position_seconds: float) -> None:
+        """Seek to position in seconds."""
+        if not self._initialized:
+            return
+        import pygame
+        try:
+            pygame.mixer.music.set_pos(position_seconds)
+        except Exception:
+            pass
+        self._play_start = time.monotonic() - position_seconds
+        self._paused_at = position_seconds
+
+    def get_duration(self) -> float:
+        """Return current song duration in seconds."""
+        song = self.current_song
+        if song is None:
+            return 0.0
+        return song.duration
 
     def stop(self) -> None:
         if self._initialized:
             import pygame
             pygame.mixer.music.stop()
         self._state = PlayerState.STOPPED
+        self._play_start = 0.0
+        self._paused_at = 0.0
 
     def toggle_play_pause(self) -> None:
         if self._state == PlayerState.PLAYING:
@@ -180,7 +215,16 @@ class Player:
         if not self._playlist:
             return
         was_playing = self._state == PlayerState.PLAYING
-        self._current_index = (self._current_index + 1) % len(self._playlist)
+        if was_playing:
+            self._state = PlayerState.STOPPED
+        if self._play_mode == "random":
+            # Playlist already shuffled; just move to next in the shuffled order
+            self._current_index = (self._current_index + 1) % len(self._playlist)
+        elif self._play_mode == "repeat":
+            # Stay on same song
+            pass
+        else:
+            self._current_index = (self._current_index + 1) % len(self._playlist)
         if was_playing:
             self.play()
 
@@ -188,6 +232,8 @@ class Player:
         if not self._playlist:
             return
         was_playing = self._state == PlayerState.PLAYING
+        if was_playing:
+            self._state = PlayerState.STOPPED
         self._current_index = (self._current_index - 1) % len(self._playlist)
         if was_playing:
             self.play()
