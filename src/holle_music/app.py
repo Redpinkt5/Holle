@@ -652,7 +652,8 @@ class HolleMusicApp(App):
 
     def _search_songs(self, query: str) -> None:
         q = query.strip().lower()
-        all_songs = self.player.playlist
+        # 从原始完整列表搜索，避免在搜索结果上二次搜索
+        all_songs = self._original_songs or self.player.playlist
         if not all_songs:
             self._notify_chat("播放列表为空")
             return
@@ -662,8 +663,11 @@ class HolleMusicApp(App):
         results = [s for s in all_songs if q in s.title.lower() or q in s.artist.lower()]
         self._displayed_songs = results
         if results:
+            # 将搜索结果设为当前播放列表
+            self.player.load_playlist(results)
             panel = self.query_one("#playlist-panel", PlaylistPanel)
             panel.load_songs(results)
+            panel.border_title = f'✻ Playlist | 搜索: "{query}"'
             self._notify_chat(f'搜索 "{query}" — {len(results)} 首')
         else:
             self._notify_chat(f'未找到 "{query}"')
@@ -687,10 +691,12 @@ class HolleMusicApp(App):
             pass
 
     def _restore_playlist_display(self) -> None:
-        songs = self.player.playlist
+        songs = self._original_songs or self.player.playlist
         self._displayed_songs = []
+        self.player.load_playlist(songs)
         panel = self.query_one("#playlist-panel", PlaylistPanel)
         panel.load_songs(songs)
+        panel.border_title = "✻ Playlist"
         self._notify_chat(f"播放列表 ({len(songs)} 首)")
 
 

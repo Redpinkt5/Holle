@@ -16,3 +16,6 @@ venv/
 .vscode/
 *.swp
 *.swo
+
+# Claude
+.claude/
