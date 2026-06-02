@@ -21,7 +21,7 @@ class SpectrumAnalyzer:
     PEAK_EMA: float = 0.95          # global peak smoothing
     DYNAMIC_RANGE: float = 60.0     # dB range for normalization
 
-    def __init__(self, num_bands: int = 24, sample_window: int = 4096) -> None:
+    def __init__(self, num_bands: int = 24, sample_window: int = 2048) -> None:
         self._num_bands = num_bands
         self._sample_window = sample_window
         self._pcm: np.ndarray | None = None
@@ -130,16 +130,12 @@ class SpectrumAnalyzer:
         window = np.hanning(len(chunk))
         fft = np.abs(np.fft.rfft(chunk * window))
 
-        # Map FFT bins to log-spaced frequency bands, compute dB per band
+        # Map FFT bins to log-spaced frequency bands — vectorized
         freqs = np.fft.rfftfreq(len(chunk), 1.0 / self._sample_rate)
-        raw_db = np.zeros(self._num_bands, dtype=np.float32)
-        for j in range(self._num_bands):
-            lo, hi = self._band_edges[j], self._band_edges[j + 1]
-            mask = (freqs >= lo) & (freqs < hi)
-            if mask.any():
-                raw_db[j] = float(np.max(fft[mask]))
-            else:
-                raw_db[j] = self._epsilon
+        band_indices = np.searchsorted(self._band_edges, freqs, side='right') - 1
+        band_indices = np.clip(band_indices, 0, self._num_bands - 1)
+        raw_db = np.full(self._num_bands, self._epsilon, dtype=np.float32)
+        np.maximum.at(raw_db, band_indices, fft)
 
         # Convert to dB and apply frequency weighting
         raw_db = 20 * np.log10(raw_db + self._epsilon)
