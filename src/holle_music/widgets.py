@@ -953,7 +953,7 @@ class Visualizer(Static):
         if self._timer is None:
             self._frame_count = 0
             self._last_seen = -1
-            self._timer = self.set_interval(1 / 12, self._tick)
+            self._timer = self.set_interval(1 / 30, self._tick)
             self._watchdog = self.set_interval(2.0, self._watchdog_check)
 
     def start(self) -> None:
@@ -974,7 +974,7 @@ class Visualizer(Static):
                 self._timer.stop()
             except Exception:
                 pass
-            self._timer = self.set_interval(1 / 12, self._tick)
+            self._timer = self.set_interval(1 / 30, self._tick)
         self._last_seen = self._frame_count
 
     def _tick(self) -> None:
