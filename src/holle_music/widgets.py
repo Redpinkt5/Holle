@@ -792,7 +792,7 @@ class Controls(Static):
             from datetime import datetime
             now = datetime.now().strftime("%Y.%m.%d %H:%M:%S")
             try:
-                self.query_one("#clock", Static).update(f"[dim]{now}[/dim]")
+                self.query_one("#clock", Static).update(f"[dim]{now}  V0.1.1[/dim]")
             except Exception:
                 pass
         _update_clock()
