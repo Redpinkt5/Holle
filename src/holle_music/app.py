@@ -545,15 +545,26 @@ class HolleMusicApp(App):
 
         def _run():
             try:
+                from datetime import datetime
+
                 song = self.player.current_song
-                context = f"当前播放: {song.title} - {song.artist}。" if song else ""
+                now = datetime.now().strftime("%Y年%m月%d日 %H:%M:%S")
+                time_ctx = f"当前系统时间: {now}。"
+                song_ctx = f"当前播放歌曲: {song.title} - {song.artist}。" if song else ""
+
+                # 联网搜索（实时信息、天气、新闻等）
                 try:
                     results = self._ai.search_web(text)
                 except Exception:
                     results = ""
-                prompt = f"{context}\n问题: {text}"
+
+                prompt_parts = [time_ctx, song_ctx, f"用户问题: {text}"]
                 if results:
-                    prompt += f"\n\n参考信息:\n{results}"
+                    prompt_parts.append(f"以下是通过联网搜索获得的实时参考信息，请优先依据这些信息回答:\n{results}")
+                else:
+                    prompt_parts.append("（联网搜索未返回结果，请根据你的知识和当前时间回答问题）")
+
+                prompt = "\n\n".join(filter(None, prompt_parts))
                 response = self._ai.chat(prompt)
                 self.call_from_thread(lambda: chat.add_ai_msg(response))
             except Exception as e:
