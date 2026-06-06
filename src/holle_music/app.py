@@ -25,7 +25,7 @@ from holle_music.widgets import (
     set_shimmer_palette,
     get_shimmer_palette,
 )
-from holle_music.glm_api import GLMAIService
+from holle_music.minimax_api import MiniMaxService
 
 
 class CommandType(Enum):
@@ -328,7 +328,7 @@ class HolleMusicApp(App):
         self._playlists: dict[str, Playlist] = {}
         self._displayed_songs: list[Song] = []
         self._original_songs: list[Song] = []
-        self._glm = GLMAIService()
+        self._ai = MiniMaxService()
         self._current_music_dir = "E:/Music"
         self.player.on_song_change(self._on_song_changed)
 
@@ -377,7 +377,7 @@ class HolleMusicApp(App):
 
         def _run():
             try:
-                result = self._glm.query_once(prompt)
+                result = self._ai.query_once(prompt)
                 self.call_from_thread(self._on_song_bg_done, result)
             except Exception:
                 self.call_from_thread(self._on_song_bg_error, "获取歌曲背景失败")
@@ -548,13 +548,13 @@ class HolleMusicApp(App):
                 song = self.player.current_song
                 context = f"当前播放: {song.title} - {song.artist}。" if song else ""
                 try:
-                    results = self._glm.search_web(text)
+                    results = self._ai.search_web(text)
                 except Exception:
                     results = ""
                 prompt = f"{context}\n问题: {text}"
                 if results:
                     prompt += f"\n\n参考信息:\n{results}"
-                response = self._glm.chat(prompt)
+                response = self._ai.chat(prompt)
                 self.call_from_thread(lambda: chat.add_ai_msg(response))
             except Exception as e:
                 self.call_from_thread(lambda: chat.add_ai_msg(f"请求失败: {e}"))

@@ -280,6 +280,70 @@ class MiniMaxService:
     def history(self) -> list[dict]:
         return list(self._chat_history)
 
+    # ── One-shot query (no history) ─────────────────────────────────
+
+    def query_once(
+        self,
+        prompt: str,
+        on_token: Callable[[str], None] | None = None,
+    ) -> str:
+        """One-shot query without touching chat history."""
+        messages = [
+            {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+
+        def _call():
+            if on_token:
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=512,
+                    temperature=0.7,
+                    timeout=30,
+                    stream=True,
+                )
+                full = ""
+                for chunk in resp:
+                    delta = getattr(chunk.choices[0].delta, "content", None)
+                    if delta:
+                        full += delta
+                        on_token(delta)
+                return full
+            else:
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=512,
+                    temperature=0.7,
+                    timeout=30,
+                )
+                return resp.choices[0].message.content or ""
+
+        return self._retry(_call)
+
+    # ── Web search (same as GLM) ────────────────────────────────────
+
+    @staticmethod
+    def search_web(query: str) -> str:
+        """Search the web and return formatted results."""
+        try:
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
+            results = []
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=5):
+                    title = r.get("title", "")
+                    body = r.get("body", "")
+                    href = r.get("href", "")
+                    if title and body:
+                        results.append(f"[{title}]\n{body}\n{href}")
+            return "\n\n".join(results)
+        except Exception:
+            return ""
+
 
 def _api_key_help() -> str:
     return (
