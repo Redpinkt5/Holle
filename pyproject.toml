@@ -37,6 +37,7 @@ dependencies = [
 
 [project.scripts]
 Holle = "holle_music.app:main"
+HollePet = "holle_music.pet.main:main"
 
 [project.urls]
 Homepage = "https://github.com/Redpinkt5/Holle"
