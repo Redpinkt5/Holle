@@ -357,6 +357,97 @@ class HolleMusicApp(App):
         self._handle_command(Command(CommandType.SCAN))
         self.set_interval(1.0, self._check_song_end)
         self.set_interval(0.25, self._update_progress)
+        # IPC for desktop pet
+        from pathlib import Path
+        (Path.home() / ".holle_music").mkdir(parents=True, exist_ok=True)
+        self._pet_state_timer = self.set_interval(1.0, self._write_pet_state)
+        self._pet_cmd_timer = self.set_interval(0.5, self._read_pet_cmd)
+
+    # ── IPC for desktop pet ─────────────────────────────────────────
+
+    def _write_pet_state(self) -> None:
+        import json, time
+        song = self.player.current_song
+        state = {
+            "playing": self.player.is_playing,
+            "song": {"title": song.title, "artist": song.artist} if song else None,
+            "mode": self.player.play_mode,
+            "time": time.time(),
+        }
+        try:
+            path = Path.home() / ".holle_music" / "pet_state.json"
+            path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _read_pet_cmd(self) -> None:
+        import json, time
+        path = Path.home() / ".holle_music" / "pet_cmd.json"
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            cmd_time = data.get("time", 0)
+            if time.time() - cmd_time > 3.0:
+                path.unlink(missing_ok=True)
+                return
+            cmd = data.get("cmd", "")
+            if cmd == "toggle":
+                self.player.toggle_play_pause()
+                self._update_controls_ui()
+            elif cmd == "next":
+                self.player.next()
+                self._sync_playlist_selection()
+            elif cmd == "prev":
+                self.player.previous()
+                self._sync_playlist_selection()
+            elif cmd == "mode":
+                self._cycle_play_mode()
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def _cycle_play_mode(self) -> None:
+        modes = ["sequential", "random", "repeat"]
+        current = self.player.play_mode
+        next_mode = modes[(modes.index(current) + 1) % len(modes)] if current in modes else "sequential"
+        self.player.set_play_mode(next_mode)
+        controls = self.query_one("#controls", Controls)
+        controls._mode = next_mode
+        controls._update_mode_buttons()
+        panel = self.query_one("#playlist-panel", PlaylistPanel)
+        if next_mode == "random":
+            import random
+            songs = list(self.player.playlist)
+            if not songs:
+                return
+            cur = self.player.current_index
+            current_song = songs.pop(cur)
+            random.shuffle(songs)
+            songs.insert(0, current_song)
+            self.player.load_playlist(songs)
+            self.player._current_index = 0
+            panel.load_songs(songs)
+            panel.border_title = "✻ Playlist ↬"
+            self._displayed_songs = songs
+            self._notify_chat("随机播放模式已开启")
+        elif next_mode == "sequential":
+            if self._original_songs:
+                cur_song = self.player.current_song
+                self.player.load_playlist(self._original_songs)
+                if cur_song:
+                    try:
+                        idx = self._original_songs.index(cur_song)
+                        self.player._current_index = idx
+                    except ValueError:
+                        pass
+                panel.load_songs(self._original_songs)
+            panel.border_title = "✻ Playlist ⭢"
+            self._displayed_songs = []
+            self._notify_chat("顺序播放模式已开启")
+        elif next_mode == "repeat":
+            panel.border_title = "✻ Playlist ⟳"
+            self._notify_chat("单曲循环模式已开启")
 
     # ── Song change ─────────────────────────────────────────────────
 
