@@ -248,8 +248,60 @@ class PetWindow:
         bmp.CreateCompatibleBitmap(hdc_mem, w, h)
         hdc_compatible.SelectObject(bmp)
 
+        # Convert PIL to DIB and update layered window
         img_bytes = img.tobytes("raw", "BGRA")
-        bmp.SetBitmapBits(img_bytes)
+
+        # BITMAPINFOHEADER for 32-bit BGRA
+        import struct
+        bih = struct.pack(
+            "IiiHHIIiiII",
+            40,          # biSize
+            w,           # biWidth
+            -h,          # biHeight (negative = top-down)
+            1,           # biPlanes
+            32,          # biBitCount
+            0,           # biCompression (BI_RGB)
+            0,           # biSizeImage
+            0,           # biXPelsPerMeter
+            0,           # biYPelsPerMeter
+            0,           # biClrUsed
+            0,           # biClrImportant
+        )
+
+        # Create DIB section and copy pixel data
+        hdc = win32gui.GetDC(0)
+        hdr = bih + b"\x00" * (52 - len(bih))  # pad to 52 bytes if needed
+        hbmp = win32gui.CreateDIBSection(hdc, hdr, win32con.DIB_RGB_COLORS)
+        # Copy pixel data into DIB
+        import ctypes
+        pBits = ctypes.cast(hbmp, ctypes.POINTER(ctypes.c_void_p))
+        # Actually CreateDIBSection returns (hbmp, bits_pointer)
+        # So we need to use the correct API
+        win32gui.ReleaseDC(0, hdc)
+
+        # Simpler approach: use SetDIBitsToDevice or StretchDIBits
+        # Even simpler: just draw to mem DC using BitBlt after setting pixels
+        # Let's use the compatible DC approach with SetDIBits
+        hdc_screen = win32gui.GetDC(0)
+        hdc_mem = win32gui.CreateCompatibleDC(hdc_screen)
+
+        # Create DIB section properly
+        bi = struct.pack(
+            "IiiHHIIiiII",
+            40, w, -h, 1, 32, 0, 0, 0, 0, 0, 0,
+        )
+        result = win32gui.CreateDIBSection(hdc_screen, bi, win32con.DIB_RGB_COLORS)
+        if isinstance(result, tuple):
+            hbmp, pBits = result
+        else:
+            hbmp = result
+            pBits = None
+
+        if hbmp and pBits:
+            # Copy pixel data
+            ctypes.memmove(pBits, img_bytes, len(img_bytes))
+
+        old_bmp = win32gui.SelectObject(hdc_mem, hbmp)
 
         point_src = win32api.POINT(0, 0)
         size = win32api.SIZE(w, h)
@@ -266,14 +318,16 @@ class PetWindow:
             hdc_screen,
             point_dst,
             size,
-            hdc_compatible.GetSafeHdc(),
+            hdc_mem,
             point_src,
             0,
             blend,
             win32con.ULW_ALPHA,
         )
 
-        hdc_compatible.DeleteDC()
+        win32gui.SelectObject(hdc_mem, old_bmp)
+        win32gui.DeleteObject(hbmp)
+        win32gui.DeleteDC(hdc_mem)
         win32gui.ReleaseDC(0, hdc_screen)
 
     # ── Click handling ────────────────────────────────────────────────────
