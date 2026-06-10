@@ -248,58 +248,66 @@ class PetWindow:
         bmp.CreateCompatibleBitmap(hdc_mem, w, h)
         hdc_compatible.SelectObject(bmp)
 
-        # Convert PIL to DIB and update layered window
+        # Convert PIL to DIB via ctypes CreateDIBSection
         img_bytes = img.tobytes("raw", "BGRA")
 
-        # BITMAPINFOHEADER for 32-bit BGRA
-        import struct
-        bih = struct.pack(
-            "IiiHHIIiiII",
-            40,          # biSize
-            w,           # biWidth
-            -h,          # biHeight (negative = top-down)
-            1,           # biPlanes
-            32,          # biBitCount
-            0,           # biCompression (BI_RGB)
-            0,           # biSizeImage
-            0,           # biXPelsPerMeter
-            0,           # biYPelsPerMeter
-            0,           # biClrUsed
-            0,           # biClrImportant
-        )
-
-        # Create DIB section and copy pixel data
-        hdc = win32gui.GetDC(0)
-        hdr = bih + b"\x00" * (52 - len(bih))  # pad to 52 bytes if needed
-        hbmp = win32gui.CreateDIBSection(hdc, hdr, win32con.DIB_RGB_COLORS)
-        # Copy pixel data into DIB
         import ctypes
-        pBits = ctypes.cast(hbmp, ctypes.POINTER(ctypes.c_void_p))
-        # Actually CreateDIBSection returns (hbmp, bits_pointer)
-        # So we need to use the correct API
-        win32gui.ReleaseDC(0, hdc)
+        from ctypes import wintypes
 
-        # Simpler approach: use SetDIBitsToDevice or StretchDIBits
-        # Even simpler: just draw to mem DC using BitBlt after setting pixels
-        # Let's use the compatible DC approach with SetDIBits
+        gdi32 = ctypes.windll.gdi32
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ("biSize", wintypes.DWORD),
+                ("biWidth", wintypes.LONG),
+                ("biHeight", wintypes.LONG),
+                ("biPlanes", wintypes.WORD),
+                ("biBitCount", wintypes.WORD),
+                ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD),
+                ("biXPelsPerMeter", wintypes.LONG),
+                ("biYPelsPerMeter", wintypes.LONG),
+                ("biClrUsed", wintypes.DWORD),
+                ("biClrImportant", wintypes.DWORD),
+            ]
+
+        class RGBQUAD(ctypes.Structure):
+            _fields_ = [
+                ("rgbBlue", wintypes.BYTE),
+                ("rgbGreen", wintypes.BYTE),
+                ("rgbRed", wintypes.BYTE),
+                ("rgbReserved", wintypes.BYTE),
+            ]
+
+        class BITMAPINFO(ctypes.Structure):
+            _fields_ = [
+                ("bmiHeader", BITMAPINFOHEADER),
+                ("bmiColors", RGBQUAD * 1),
+            ]
+
+        bmi = BITMAPINFO()
+        bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.bmiHeader.biWidth = w
+        bmi.bmiHeader.biHeight = -h  # negative = top-down
+        bmi.bmiHeader.biPlanes = 1
+        bmi.bmiHeader.biBitCount = 32
+        bmi.bmiHeader.biCompression = 0  # BI_RGB
+
         hdc_screen = win32gui.GetDC(0)
         hdc_mem = win32gui.CreateCompatibleDC(hdc_screen)
 
-        # Create DIB section properly
-        bi = struct.pack(
-            "IiiHHIIiiII",
-            40, w, -h, 1, 32, 0, 0, 0, 0, 0, 0,
+        ppvBits = ctypes.c_void_p()
+        hbmp = gdi32.CreateDIBSection(
+            hdc_screen,
+            ctypes.byref(bmi),
+            0,  # DIB_RGB_COLORS
+            ctypes.byref(ppvBits),
+            None,
+            0,
         )
-        result = win32gui.CreateDIBSection(hdc_screen, bi, win32con.DIB_RGB_COLORS)
-        if isinstance(result, tuple):
-            hbmp, pBits = result
-        else:
-            hbmp = result
-            pBits = None
 
-        if hbmp and pBits:
-            # Copy pixel data
-            ctypes.memmove(pBits, img_bytes, len(img_bytes))
+        if hbmp and ppvBits.value:
+            ctypes.memmove(ppvBits.value, img_bytes, len(img_bytes))
 
         old_bmp = win32gui.SelectObject(hdc_mem, hbmp)
 
