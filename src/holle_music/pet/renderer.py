@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw, ImageColor
 
-from holle_music.widgets import Mascot
+from holle_music.widgets import Mascot, _SHIMMER_PALETTES, _SHIMMER_INTERVAL, _current_palette
 
 
 CELL_W: int = 10   # terminal char width
@@ -16,13 +16,14 @@ DEFAULT_BODY_COLOR: str = "#ffffff"
 class MascotRenderer:
     """Render the ASCII mascot as an RGBA PNG image."""
 
-    def render(self, direction: str, active: bool, shimmer_color: str = "#ff69b4") -> Image.Image:
+    def render(self, direction: str, active: bool, palette_name: str = "pink", shimmer_idx: int = 0) -> Image.Image:
         """Generate RGBA mascot image.
 
         Args:
             direction: Eye direction (must be a key in ``Mascot._EYES``).
             active: Whether the mascot is in active/shimmer state.
-            shimmer_color: Body color when ``active`` is True.
+            palette_name: Name of the shimmer palette theme.
+            shimmer_idx: Index into the palette for the current color.
 
         Returns:
             A Pillow ``Image`` in RGBA mode with a transparent background.
@@ -32,13 +33,18 @@ class MascotRenderer:
         img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        body_color = shimmer_color if active else DEFAULT_BODY_COLOR
+        if active:
+            palette = _SHIMMER_PALETTES.get(palette_name, _SHIMMER_PALETTES["pink"])
+            body_color = palette[shimmer_idx % len(palette)]
+        else:
+            body_color = DEFAULT_BODY_COLOR
+
         self._draw_body(draw, body_color, active)
         self._draw_eyes(draw, direction)
 
         if active:
             # Subtle glow border
-            glow_color = (*ImageColor.getrgb(shimmer_color), 80)
+            glow_color = (*ImageColor.getrgb(body_color), 80)
             draw.rectangle([0, 0, width - 1, height - 1], outline=glow_color, width=2)
 
         return img
