@@ -9,11 +9,13 @@ from pathlib import Path
 from typing import Callable
 
 try:
+    import pywintypes
     import win32api
     import win32con
     import win32gui
     import win32ui
 except ImportError:  # pragma: no cover
+    pywintypes = None  # type: ignore[assignment]
     win32api = None  # type: ignore[assignment]
     win32con = None  # type: ignore[assignment]
     win32gui = None  # type: ignore[assignment]
@@ -311,9 +313,9 @@ class PetWindow:
 
         old_bmp = win32gui.SelectObject(hdc_mem, hbmp)
 
-        point_src = win32api.POINT(0, 0)
-        size = win32api.SIZE(w, h)
-        point_dst = win32api.POINT(self._window_pos[0], self._window_pos[1])
+        point_src = pywintypes.POINT(0, 0)
+        size = pywintypes.SIZE(w, h)
+        point_dst = pywintypes.POINT(self._window_pos[0], self._window_pos[1])
         blend = {
             "BlendOp": win32con.AC_SRC_OVER,
             "BlendFlags": 0,
