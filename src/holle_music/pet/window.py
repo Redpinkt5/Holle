@@ -22,17 +22,7 @@ except ImportError:  # pragma: no cover
 from holle_music.pet.click_zone import ClickZone
 from holle_music.pet.renderer import MascotRenderer, CELL_W, CELL_H, PADDING
 from holle_music.widgets import Mascot as MascotWidget
-
-
-_SHIMMER_COLORS = [
-    "#ff69b4",
-    "#ffd700",
-    "#ff4500",
-    "#00bfff",
-    "#9370db",
-    "#32cd32",
-    "#ffa500",
-]
+from holle_music.widgets import _SHIMMER_PALETTES, _SHIMMER_INTERVAL, _current_palette
 
 
 class PetWindow:
@@ -51,13 +41,16 @@ class PetWindow:
         self._dragging = False
         self._drag_start = (0, 0)
         self._drag_click_pos: tuple[int, int] | None = None
+        self._drag_has_moved = False
         self._window_pos = self._load_position()
         self._last_eye_update = 0.0
         self._direction = "center"
         self._active = False
         self._shimmer_idx = 0
+        self._last_shimmer_update = 0.0
         self._running = True
         self._size = self._calc_size()
+        self._on_player_state_check: Callable[[], bool] | None = None
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -104,6 +97,12 @@ class PetWindow:
 
             # Track mouse globally (even outside window) for eye direction
             self._track_mouse_global()
+
+            # Sync playing state for shimmer
+            if self._on_player_state_check is not None:
+                is_playing = self._on_player_state_check()
+                if is_playing != self._active:
+                    self.set_active(is_playing)
 
             # Update tkinter dialog if open
             if self._dialog is not None:
@@ -182,6 +181,8 @@ class PetWindow:
                 cx, cy = win32api.GetCursorPos()
                 dx = cx - self._drag_start[0]
                 dy = cy - self._drag_start[1]
+                if abs(dx) > 3 or abs(dy) > 3:
+                    self._drag_has_moved = True
                 self._window_pos = (
                     self._window_pos[0] + dx,
                     self._window_pos[1] + dy,
@@ -204,6 +205,7 @@ class PetWindow:
             x = win32api.LOWORD(lparam)
             y = win32api.HIWORD(lparam)
             self._dragging = True
+            self._drag_has_moved = False
             self._drag_start = win32api.GetCursorPos()
             self._drag_click_pos = (x, y)
             return 0
@@ -212,14 +214,12 @@ class PetWindow:
             x = win32api.LOWORD(lparam)
             y = win32api.HIWORD(lparam)
             self._dragging = False
-            # If moved less than 5px, treat as click
-            if self._drag_click_pos:
-                dx = abs(x - self._drag_click_pos[0])
-                dy = abs(y - self._drag_click_pos[1])
-                if dx < 5 and dy < 5:
-                    zone = self._click_zone.detect(x, y, *self._size)
-                    if zone:
-                        self._handle_click(zone)
+            # Only trigger click if we didn't move significantly
+            if not self._drag_has_moved and self._drag_click_pos:
+                zone = self._click_zone.detect(x, y, *self._size)
+                if zone:
+                    self._handle_click(zone)
+            self._drag_has_moved = False
             return 0
 
         if msg == win32con.WM_RBUTTONUP:
@@ -295,15 +295,19 @@ class PetWindow:
     def _update_animation(self) -> None:
         if not self._active:
             return
-        self._shimmer_idx = (self._shimmer_idx + 1) % len(_SHIMMER_COLORS)
+        now = time.monotonic()
+        if now - self._last_shimmer_update < _SHIMMER_INTERVAL:
+            return
+        self._last_shimmer_update = now
+        palette = _SHIMMER_PALETTES[_current_palette]
+        self._shimmer_idx = (self._shimmer_idx + 1) % len(palette)
         self._update_display()
 
     def _update_display(self) -> None:
         if not self._hwnd or win32gui is None:
             return
 
-        color = _SHIMMER_COLORS[self._shimmer_idx] if self._active else "#ff69b4"
-        img = self._renderer.render(self._direction, self._active, color)
+        img = self._renderer.render(self._direction, self._active, palette_name=_current_palette, shimmer_idx=self._shimmer_idx)
         w, h = img.size
 
         img_bytes = img.tobytes("raw", "BGRA")
