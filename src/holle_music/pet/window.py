@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import math
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable
@@ -233,6 +235,10 @@ class PetWindow:
             self._drag_has_moved = False
             return 0
 
+        if msg == win32con.WM_MBUTTONDOWN:
+            self._switch_back_to_terminal()
+            return 0
+
         if msg == win32con.WM_RBUTTONUP:
             self._show_context_menu()
             return 0
@@ -458,7 +464,8 @@ class PetWindow:
         try:
             menu = win32gui.CreatePopupMenu()
             win32gui.AppendMenu(menu, win32con.MF_STRING, 1, "Hide")
-            win32gui.AppendMenu(menu, win32con.MF_STRING, 2, "Quit")
+            win32gui.AppendMenu(menu, win32con.MF_STRING, 2, "Switch to Terminal")
+            win32gui.AppendMenu(menu, win32con.MF_STRING, 3, "Quit")
 
             x, y = win32api.GetCursorPos()
             cmd = win32gui.TrackPopupMenu(
@@ -473,10 +480,26 @@ class PetWindow:
             if cmd == 1:
                 win32gui.ShowWindow(self._hwnd, win32con.SW_HIDE)
             elif cmd == 2:
+                self._switch_back_to_terminal()
+            elif cmd == 3:
                 self._running = False
                 win32gui.DestroyWindow(self._hwnd)
         except Exception:
             pass
+
+    def _switch_back_to_terminal(self) -> None:
+        """Close pet and launch terminal."""
+        self._save_position()
+        self._launch_terminal()
+        self.close()
+
+    def _launch_terminal(self) -> None:
+        subprocess.Popen(
+            [sys.executable, "-m", "holle_music"],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     # ── Position persistence ──────────────────────────────────────────────
 
