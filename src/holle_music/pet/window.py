@@ -67,17 +67,16 @@ class PetWindow:
 
         self._update_display()
 
-        # Message loop: PeekMessage for non-blocking + animation
+        # Set up animation timer (33ms ≈ 30fps)
+        win32gui.SetTimer(self._hwnd, 1, 33, None)
+
+        # Standard Windows message loop (blocks until message arrives)
         while self._running:
-            ret, msg = win32gui.PeekMessage(None, 0, 0, win32con.PM_REMOVE)
-            if ret != 0:
-                if msg.message == win32con.WM_QUIT:
-                    break
-                win32gui.TranslateMessage(msg)
-                win32gui.DispatchMessage(msg)
-            else:
-                self._update_animation()
-                time.sleep(1 / 30)
+            msg = win32gui.GetMessage(None, 0, 0)
+            if msg[0] == 0:  # WM_QUIT
+                break
+            win32gui.TranslateMessage(msg[1])
+            win32gui.DispatchMessage(msg[1])
 
         self._save_position()
 
@@ -190,8 +189,13 @@ class PetWindow:
             self._show_context_menu()
             return 0
 
+        if msg == win32con.WM_TIMER:
+            self._update_animation()
+            return 0
+
         if msg == win32con.WM_DESTROY:
             self._running = False
+            win32gui.KillTimer(hwnd, 1)
             win32gui.PostQuitMessage(0)
             return 0
 
