@@ -67,16 +67,11 @@ class PetWindow:
 
         self._update_display()
 
-        # Set up animation timer (33ms ≈ 30fps)
-        win32gui.SetTimer(self._hwnd, 1, 33, None)
-
-        # Standard Windows message loop (blocks until message arrives)
+        # Non-blocking message loop: process pending messages, then animate
         while self._running:
-            msg = win32gui.GetMessage(None, 0, 0)
-            if msg[0] == 0:  # WM_QUIT
-                break
-            win32gui.TranslateMessage(msg[1])
-            win32gui.DispatchMessage(msg[1])
+            win32gui.PumpWaitingMessages()
+            self._update_animation()
+            time.sleep(1 / 30)
 
         self._save_position()
 
