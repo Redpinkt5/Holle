@@ -47,6 +47,7 @@ class PetWindow:
         self._drag_start = (0, 0)
         self._drag_click_pos: tuple[int, int] | None = None
         self._window_pos = self._load_position()
+        self._last_eye_update = 0.0
         self._direction = "center"
         self._active = False
         self._shimmer_idx = 0
@@ -67,11 +68,37 @@ class PetWindow:
 
         self._update_display()
 
-        # Non-blocking message loop: process pending messages, then animate
+        # Message loop using ctypes PeekMessage for proper non-blocking behavior
+        import ctypes
+        from ctypes import wintypes
+
+        class _MSG(ctypes.Structure):
+            _fields_ = [
+                ("hwnd", wintypes.HWND),
+                ("message", wintypes.UINT),
+                ("wParam", wintypes.WPARAM),
+                ("lParam", wintypes.LPARAM),
+                ("time", wintypes.DWORD),
+                ("pt", wintypes.POINT),
+            ]
+
+        msg = _MSG()
+        user32 = ctypes.windll.user32
+
         while self._running:
-            win32gui.PumpWaitingMessages()
+            # Process all pending messages
+            while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
+                if msg.message == win32con.WM_QUIT:
+                    self._running = False
+                    break
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageW(ctypes.byref(msg))
+
+            if not self._running:
+                break
+
             self._update_animation()
-            time.sleep(1 / 30)
+            time.sleep(0.016)  # ~60fps
 
         self._save_position()
 
@@ -199,6 +226,12 @@ class PetWindow:
     # ── Eye direction ─────────────────────────────────────────────────────
 
     def _update_eye_direction(self, x: int, y: int) -> None:
+        # Throttle eye updates to ~10fps max (avoid lag on rapid mouse move)
+        now = time.monotonic()
+        if now - self._last_eye_update < 0.1:
+            return
+        self._last_eye_update = now
+
         w, h = self._size
         cx, cy = w // 2, h // 2
         dx = x - cx
