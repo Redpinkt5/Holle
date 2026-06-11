@@ -39,7 +39,7 @@ class TestMascotRenderer:
     def test_render_active_changes_appearance(self):
         renderer = MascotRenderer()
         inactive = renderer.render("center", active=False)
-        active = renderer.render("center", active=True, shimmer_color="#00ff00")
+        active = renderer.render("center", active=True, palette_name="green", shimmer_idx=0)
         # Compare pixel data; active should differ from inactive
         assert inactive.tobytes() != active.tobytes()
 
