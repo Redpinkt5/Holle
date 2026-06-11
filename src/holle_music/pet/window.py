@@ -181,76 +181,80 @@ class PetWindow:
     # ── Window procedure ──────────────────────────────────────────────────
 
     def _wnd_proc(self, hwnd: int, msg: int, wparam: int, lparam: int) -> int:
-        if msg == win32con.WM_MOUSEMOVE:
-            x = win32api.LOWORD(lparam)
-            y = win32api.HIWORD(lparam)
-            if self._dragging:
-                cx, cy = win32api.GetCursorPos()
-                dx = cx - self._drag_start[0]
-                dy = cy - self._drag_start[1]
-                if abs(dx) > 3 or abs(dy) > 3:
-                    self._drag_has_moved = True
-                self._window_pos = (
-                    self._window_pos[0] + dx,
-                    self._window_pos[1] + dy,
-                )
-                self._drag_start = (cx, cy)
-                win32gui.SetWindowPos(
-                    hwnd,
-                    0,
-                    self._window_pos[0],
-                    self._window_pos[1],
-                    0,
-                    0,
-                    win32con.SWP_NOSIZE | win32con.SWP_NOZORDER,
-                )
-            else:
-                self._update_eye_direction(x, y)
-            return 0
+        try:
+            if msg == win32con.WM_MOUSEMOVE:
+                x = win32api.LOWORD(lparam)
+                y = win32api.HIWORD(lparam)
+                if self._dragging:
+                    cx, cy = win32api.GetCursorPos()
+                    dx = cx - self._drag_start[0]
+                    dy = cy - self._drag_start[1]
+                    if abs(dx) > 3 or abs(dy) > 3:
+                        self._drag_has_moved = True
+                    self._window_pos = (
+                        self._window_pos[0] + dx,
+                        self._window_pos[1] + dy,
+                    )
+                    self._drag_start = (cx, cy)
+                    win32gui.SetWindowPos(
+                        hwnd,
+                        0,
+                        self._window_pos[0],
+                        self._window_pos[1],
+                        0,
+                        0,
+                        win32con.SWP_NOSIZE | win32con.SWP_NOZORDER,
+                    )
+                else:
+                    self._update_eye_direction(x, y)
+                return 0
 
-        if msg == win32con.WM_LBUTTONDOWN:
-            x = win32api.LOWORD(lparam)
-            y = win32api.HIWORD(lparam)
-            self._dragging = True
-            self._drag_has_moved = False
-            self._drag_start = win32api.GetCursorPos()
-            self._drag_click_pos = (x, y)
-            self._drag_start_time = time.monotonic()
-            return 0
+            if msg == win32con.WM_LBUTTONDOWN:
+                x = win32api.LOWORD(lparam)
+                y = win32api.HIWORD(lparam)
+                self._dragging = True
+                self._drag_has_moved = False
+                self._drag_start = win32api.GetCursorPos()
+                self._drag_click_pos = (x, y)
+                self._drag_start_time = time.monotonic()
+                return 0
 
-        if msg == win32con.WM_LBUTTONUP:
-            x = win32api.LOWORD(lparam)
-            y = win32api.HIWORD(lparam)
-            self._dragging = False
-            press_duration = time.monotonic() - self._drag_start_time
-            is_click = (not self._drag_has_moved) and (press_duration < 0.2)
-            if is_click and self._drag_click_pos:
-                # If bubble is visible, let it handle the click first
-                if self._bubble._visible:
-                    if self._bubble.on_click(x, y):
-                        return 0
-                zone = self._click_zone.detect(x, y, *self._size)
-                if zone:
-                    self._handle_click(zone)
-            self._drag_has_moved = False
-            return 0
+            if msg == win32con.WM_LBUTTONUP:
+                x = win32api.LOWORD(lparam)
+                y = win32api.HIWORD(lparam)
+                self._dragging = False
+                press_duration = time.monotonic() - self._drag_start_time
+                is_click = (not self._drag_has_moved) and (press_duration < 0.2)
+                if is_click and self._drag_click_pos:
+                    # If bubble is visible, let it handle the click first
+                    if self._bubble._visible:
+                        if self._bubble.on_click(x, y):
+                            return 0
+                    zone = self._click_zone.detect(x, y, *self._size)
+                    if zone:
+                        self._handle_click(zone)
+                self._drag_has_moved = False
+                return 0
 
-        if msg == win32con.WM_MBUTTONDOWN:
-            self._switch_back_to_terminal()
-            return 0
+            if msg == win32con.WM_MBUTTONDOWN:
+                self._switch_back_to_terminal()
+                return 0
 
-        if msg == win32con.WM_RBUTTONUP:
-            self._show_context_menu()
-            return 0
+            if msg == win32con.WM_RBUTTONUP:
+                self._show_context_menu()
+                return 0
 
-        if msg == win32con.WM_TIMER:
-            self._update_animation()
-            return 0
+            if msg == win32con.WM_TIMER:
+                self._update_animation()
+                return 0
 
-        if msg == win32con.WM_DESTROY:
-            self._running = False
-            win32gui.KillTimer(hwnd, 1)
-            win32gui.PostQuitMessage(0)
+            if msg == win32con.WM_DESTROY:
+                self._running = False
+                win32gui.KillTimer(hwnd, 1)
+                win32gui.PostQuitMessage(0)
+                return 0
+        except Exception as e:
+            self._log_error(f"WndProc error: {e}")
             return 0
 
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
@@ -434,20 +438,34 @@ class PetWindow:
     # ── Click handling ────────────────────────────────────────────────────
 
     def _handle_click(self, zone: str) -> None:
-        if zone == "top":
-            # Show mode-switch bubble
-            current = self._get_current_mode()
-            target = self._get_next_mode(current)
-            if win32gui:
-                rect = win32gui.GetWindowRect(self._hwnd)
-                self._bubble.show_mode_bubble(current, target, rect)
-        elif zone == "bottom":
-            # Show chat bubble
-            if win32gui:
-                rect = win32gui.GetWindowRect(self._hwnd)
-                self._bubble.show_chat_bubble(rect)
-        elif self._on_action:
-            self._on_action(zone)
+        try:
+            if zone == "top":
+                # Show mode-switch bubble
+                current = self._get_current_mode()
+                target = self._get_next_mode(current)
+                if win32gui:
+                    rect = win32gui.GetWindowRect(self._hwnd)
+                    self._bubble.show_mode_bubble(current, target, rect)
+            elif zone == "bottom":
+                # Show chat bubble
+                if win32gui:
+                    rect = win32gui.GetWindowRect(self._hwnd)
+                    self._bubble.show_chat_bubble(rect)
+            elif self._on_action:
+                self._on_action(zone)
+        except Exception as e:
+            self._log_error(f"Handle click error: {e}")
+
+    def _log_error(self, message: str) -> None:
+        """Log error to file for debugging."""
+        try:
+            log_path = Path.home() / ".holle_music" / "pet_errors.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as f:
+                from datetime import datetime
+                f.write(f"[{datetime.now().isoformat()}] {message}\n")
+        except Exception:
+            pass
 
     def _get_current_mode(self) -> str:
         # TODO: get current mode from player_proxy

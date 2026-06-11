@@ -71,45 +71,51 @@ class BubbleManager:
         pet_rect: tuple[int, int, int, int],
     ) -> None:
         """Show a mode-switch confirmation bubble above the pet."""
-        self.hide()
-        self._mode = "mode"
-        self._shown_at = time.monotonic()
+        try:
+            self.hide()
+            self._mode = "mode"
+            self._shown_at = time.monotonic()
 
-        img = self._renderer.render_mode_bubble(current, target)
-        w, h = img.size
-        x, y = _calc_position(w, h, pet_rect, above=True)
+            img = self._renderer.render_mode_bubble(current, target)
+            w, h = img.size
+            x, y = _calc_position(w, h, pet_rect, above=True)
 
-        # Store button hit boxes (match renderer layout)
-        from holle_music.pet.bubble_renderer import PADDING, ARROW_HEIGHT, BUTTON_HEIGHT
-        btn_w = (w - PADDING * 3) // 2
-        btn_h = BUTTON_HEIGHT
-        btn_y = h - ARROW_HEIGHT - btn_h - PADDING // 2
-        self._confirm_bbox = (PADDING, btn_y, PADDING + btn_w, btn_y + btn_h)
-        self._cancel_bbox = (w - PADDING - btn_w, btn_y, w - PADDING, btn_y + btn_h)
+            # Store button hit boxes (match renderer layout)
+            from holle_music.pet.bubble_renderer import PADDING, ARROW_HEIGHT, BUTTON_HEIGHT
+            btn_w = (w - PADDING * 3) // 2
+            btn_h = BUTTON_HEIGHT
+            btn_y = h - ARROW_HEIGHT - btn_h - PADDING // 2
+            self._confirm_bbox = (PADDING, btn_y, PADDING + btn_w, btn_y + btn_h)
+            self._cancel_bbox = (w - PADDING - btn_w, btn_y, w - PADDING, btn_y + btn_h)
 
-        self._ensure_window(w, h, x, y)
-        self._update_layered(img)
-        self._show_window()
-        self._visible = True
+            self._ensure_window(w, h, x, y)
+            self._update_layered(img)
+            self._show_window()
+            self._visible = True
+        except Exception as e:
+            self._log_error(f"show_mode_bubble error: {e}")
 
     def show_chat_bubble(
         self,
         pet_rect: tuple[int, int, int, int],
     ) -> None:
         """Show a chat history bubble above the pet with embedded input."""
-        self.hide()
-        self._mode = "chat"
-        self._shown_at = time.monotonic()
+        try:
+            self.hide()
+            self._mode = "chat"
+            self._shown_at = time.monotonic()
 
-        img = self._renderer.render_chat_bubble(self._messages)
-        w, h = img.size
-        x, y = _calc_position(w, h, pet_rect, above=True)
+            img = self._renderer.render_chat_bubble(self._messages)
+            w, h = img.size
+            x, y = _calc_position(w, h, pet_rect, above=True)
 
-        self._ensure_window(w, h, x, y)
-        self._update_layered(img)
-        self._show_window()
-        self._visible = True
-        self._embed_entry(w, h, x, y)
+            self._ensure_window(w, h, x, y)
+            self._update_layered(img)
+            self._show_window()
+            self._visible = True
+            self._embed_entry(w, h, x, y)
+        except Exception as e:
+            self._log_error(f"show_chat_bubble error: {e}")
 
     def hide(self) -> None:
         """Hide the current bubble and clean up tkinter input."""
@@ -214,30 +220,33 @@ class BubbleManager:
 
     def _embed_entry(self, w: int, h: int, x: int, y: int) -> None:
         """Embed a tkinter Entry widget at the bottom of the chat bubble."""
-        self._destroy_entry()
+        try:
+            self._destroy_entry()
 
-        self._tk_root = tk.Tk()
-        self._tk_root.withdraw()
-        self._tk_root.overrideredirect(True)
+            self._tk_root = tk.Tk()
+            self._tk_root.withdraw()
+            self._tk_root.overrideredirect(True)
 
-        entry_h = 26
-        entry_y = y + h - entry_h - 8
-        self._tk_root.geometry(f"{w - 16}x{entry_h}+{x + 8}+{entry_y}")
-        self._tk_root.attributes("-topmost", True)
+            entry_h = 26
+            entry_y = y + h - entry_h - 8
+            self._tk_root.geometry(f"{w - 16}x{entry_h}+{x + 8}+{entry_y}")
+            self._tk_root.attributes("-topmost", True)
 
-        self._entry = tk.Entry(
-            self._tk_root,
-            bg="#2d2d2d",
-            fg="#ffffff",
-            insertbackground="#ffffff",
-            relief="flat",
-            bd=4,
-            highlightthickness=0,
-            font=("Segoe UI", 10),
-        )
-        self._entry.pack(fill="both", expand=True)
-        self._entry.bind("<Return>", lambda _e: self._on_entry_send())
-        self._entry.focus_set()
+            self._entry = tk.Entry(
+                self._tk_root,
+                bg="#2d2d2d",
+                fg="#ffffff",
+                insertbackground="#ffffff",
+                relief="flat",
+                bd=4,
+                highlightthickness=0,
+                font=("Segoe UI", 10),
+            )
+            self._entry.pack(fill="both", expand=True)
+            self._entry.bind("<Return>", lambda _e: self._on_entry_send())
+            self._entry.focus_set()
+        except Exception as e:
+            self._log_error(f"_embed_entry error: {e}")
 
     def _destroy_entry(self) -> None:
         if self._entry is not None:
@@ -293,6 +302,18 @@ class BubbleManager:
             self._hwnd = 0
             return 0
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
+
+    def _log_error(self, message: str) -> None:
+        """Log error to file for debugging."""
+        try:
+            from pathlib import Path
+            from datetime import datetime
+            log_path = Path.home() / ".holle_music" / "pet_errors.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().isoformat()}] {message}\n")
+        except Exception:
+            pass
 
 
 # ── Utility functions ─────────────────────────────────────────────────────────
