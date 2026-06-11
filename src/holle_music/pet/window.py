@@ -62,15 +62,18 @@ class PetWindow:
     def show(self) -> None:
         """Create window and run message loop."""
         if win32gui is None:
-            print("pywin32 not installed. Run: pip install pywin32")
+            print("[PET] pywin32 not installed")
             return
 
         self._hwnd = self._create_window()
         if not self._hwnd:
+            print("[PET] Failed to create window")
             return
 
+        print(f"[PET] Window created: hwnd={self._hwnd}")
         self._bubble._parent_hwnd = self._hwnd
         self._update_display()
+        print("[PET] Entering message loop")
 
         # Message loop using ctypes PeekMessage for proper non-blocking behavior
         import ctypes
@@ -88,11 +91,14 @@ class PetWindow:
 
         msg = _MSG()
         user32 = ctypes.windll.user32
+        frame = 0
 
         while self._running:
+            frame += 1
             # Process all pending messages
             while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
                 if msg.message == win32con.WM_QUIT:
+                    print("[PET] WM_QUIT received")
                     self._running = False
                     break
                 user32.TranslateMessage(ctypes.byref(msg))
@@ -106,9 +112,13 @@ class PetWindow:
 
             # Sync playing state for shimmer
             if self._on_player_state_check is not None:
-                is_playing = self._on_player_state_check()
-                if is_playing != self._active:
-                    self.set_active(is_playing)
+                try:
+                    is_playing = self._on_player_state_check()
+                    if is_playing != self._active:
+                        self.set_active(is_playing)
+                except Exception as e:
+                    if frame % 60 == 0:
+                        print(f"[PET] State check error: {e}")
 
             # Update tkinter dialog if open
             if self._dialog is not None:
@@ -117,11 +127,17 @@ class PetWindow:
                 except Exception:
                     pass
 
-            self._update_animation()
-            self._bubble.check_auto_hide()
+            try:
+                self._update_animation()
+                self._bubble.check_auto_hide()
+            except Exception as e:
+                print(f"[PET] Animation error: {e}")
+
             time.sleep(0.016)  # ~60fps
 
+        print("[PET] Message loop ended, saving position")
         self._save_position()
+        print("[PET] Exiting show()")
 
     def set_active(self, active: bool) -> None:
         """Set playing state (triggers shimmer animation)."""
@@ -438,6 +454,7 @@ class PetWindow:
     # ── Click handling ────────────────────────────────────────────────────
 
     def _handle_click(self, zone: str) -> None:
+        print(f"[PET] Click zone: {zone}")
         try:
             # TEMP: bypass bubbles to test if they cause the crash
             # if zone == "top":
@@ -452,8 +469,13 @@ class PetWindow:
             #         self._bubble.show_chat_bubble(rect)
             # el
             if self._on_action:
+                print(f"[PET] Calling on_action('{zone}')")
                 self._on_action(zone)
+                print(f"[PET] on_action('{zone}') done")
+            else:
+                print(f"[PET] No on_action handler")
         except Exception as e:
+            print(f"[PET] Handle click error: {e}")
             self._log_error(f"Handle click error: {e}")
 
     def _log_error(self, message: str) -> None:
@@ -479,6 +501,7 @@ class PetWindow:
     # ── Context menu ──────────────────────────────────────────────────────
 
     def _show_context_menu(self) -> None:
+        print("[PET] Showing context menu")
         try:
             menu = win32gui.CreatePopupMenu()
             win32gui.AppendMenu(menu, win32con.MF_STRING, 1, "Hide")
@@ -495,6 +518,7 @@ class PetWindow:
                 self._hwnd,
                 None,
             )
+            print(f"[PET] Menu command: {cmd}")
             if cmd == 1:
                 win32gui.ShowWindow(self._hwnd, win32con.SW_HIDE)
             elif cmd == 2:
@@ -502,16 +526,18 @@ class PetWindow:
             elif cmd == 3:
                 self._running = False
                 win32gui.DestroyWindow(self._hwnd)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[PET] Menu error: {e}")
 
     def _switch_back_to_terminal(self) -> None:
         """Close pet and launch terminal."""
+        print("[PET] Switching back to terminal (middle-click or menu)")
         self._save_position()
         self._launch_terminal()
         self.close()
 
     def _launch_terminal(self) -> None:
+        print(f"[PET] Launching terminal: {sys.executable} -m holle_music")
         subprocess.Popen(
             [sys.executable, "-m", "holle_music"],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
