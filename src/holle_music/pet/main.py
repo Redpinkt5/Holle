@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from holle_music.pet.chat_dialog import ChatDialog
+from holle_music.pet.ai_tools import AITools
+from holle_music.pet.deepseek_api import DeepSeekService
 from holle_music.pet.player_proxy import PetPlayer
 from holle_music.pet.window import PetWindow
 
@@ -10,7 +11,30 @@ from holle_music.pet.window import PetWindow
 def main() -> None:
     """Start the desktop pet."""
     player = PetPlayer()
-    chat = ChatDialog()
+    ai = DeepSeekService()
+    tools = AITools(player)
+
+    # Try to restore state from terminal
+    state = player.get_state()
+    if state.get("playlist"):
+        from holle_music.models import Song
+        songs = [Song(**s) for s in state["playlist"]]
+        player.load_playlist(songs)
+
+        if state.get("song"):
+            # Find and play the saved song
+            for s in songs:
+                if s.title == state["song"].get("title"):
+                    if hasattr(player, '_standalone_player') and player._standalone_player:
+                        player._standalone_player.play(s)
+                        player.seek(state.get("position", 0))
+                    break
+
+        if state.get("volume") is not None:
+            player.set_volume(state["volume"] / 100.0)
+
+        if state.get("playing"):
+            player.toggle_play()
 
     def on_action(zone: str) -> None:
         if zone == "center":
@@ -22,24 +46,41 @@ def main() -> None:
         elif zone == "top":
             player.cycle_mode()
         elif zone == "bottom":
-            # Show chat dialog below the window
-            # Get window position from PetWindow if possible
-            # For now, center on screen
-            try:
-                import win32api
-                sw = win32api.GetSystemMetrics(0)
-                sh = win32api.GetSystemMetrics(1)
-                x = sw // 2 - 160
-                y = sh // 2 - 120
-            except ImportError:
-                x, y = 100, 100
-            chat.show(x, y)
+            # Chat bubble is handled by BubbleManager in window.py
+            pass
 
-    window = PetWindow(on_action=on_action, dialog=chat)
+    window = PetWindow(on_action=on_action)
+    window._on_player_state_check = lambda: player.is_playing
+
+    # AI chat handling
+    def on_chat_send(text: str) -> None:
+        if not text:
+            return
+        if hasattr(window, '_bubble'):
+            window._bubble.add_message("user", text)
+
+        def ai_worker():
+            try:
+                result = ai.chat(text)
+                if result["type"] == "tool_calls":
+                    for call in result["calls"]:
+                        tool_result = tools.execute(call["name"], call["arguments"])
+                        final = ai.submit_tool_result(call["id"], tool_result)
+                        if hasattr(window, '_bubble') and final.get("content"):
+                            window._bubble.add_message("ai", final["content"])
+                elif result.get("content"):
+                    if hasattr(window, '_bubble'):
+                        window._bubble.add_message("ai", result["content"])
+            except Exception as e:
+                if hasattr(window, '_bubble'):
+                    window._bubble.add_message("ai", f"出错: {e}")
+
+        import threading
+        threading.Thread(target=ai_worker, daemon=True).start()
 
     print("Holle Pet started!")
     print("Click: center=play/pause | left/right=prev/next | top=mode | bottom=chat")
-    print("Drag to move. Right-click for menu.")
+    print("Drag to move. Right-click for menu. Middle-click to switch to terminal.")
 
     window.show()
 
