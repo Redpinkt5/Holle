@@ -42,11 +42,6 @@ class MascotRenderer:
         self._draw_body(draw, body_color, active)
         self._draw_eyes(draw, direction)
 
-        if active:
-            # Subtle glow border
-            glow_color = (*ImageColor.getrgb(body_color), 80)
-            draw.rectangle([0, 0, width - 1, height - 1], outline=glow_color, width=2)
-
         return img
 
     def _draw_body(self, draw: ImageDraw.Draw, color: str, active: bool) -> None:

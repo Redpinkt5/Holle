@@ -52,6 +52,7 @@ class PetWindow:
         self._active = False
         self._shimmer_idx = 0
         self._last_shimmer_update = 0.0
+        self._last_state_check = 0.0
         self._running = True
         self._size = self._calc_size()
         self._on_player_state_check: Callable[[], bool] | None = None
@@ -110,8 +111,10 @@ class PetWindow:
             # Track mouse globally (even outside window) for eye direction
             self._track_mouse_global()
 
-            # Sync playing state for shimmer
-            if self._on_player_state_check is not None:
+            # Sync playing state for shimmer (throttle to 0.5s)
+            now = time.monotonic()
+            if self._on_player_state_check is not None and now - self._last_state_check >= 0.5:
+                self._last_state_check = now
                 try:
                     is_playing = self._on_player_state_check()
                     if is_playing != self._active:
@@ -133,7 +136,10 @@ class PetWindow:
             except Exception as e:
                 print(f"[PET] Animation error: {e}")
 
-            time.sleep(0.016)  # ~60fps
+            # Adaptive sleep to maintain ~60fps without burning CPU
+            elapsed = time.monotonic() - now
+            sleep_time = max(0.0, 0.016 - elapsed)
+            time.sleep(sleep_time)
 
         print("[PET] Message loop ended, saving position")
         self._save_position()
