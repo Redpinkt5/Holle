@@ -439,19 +439,19 @@ class PetWindow:
 
     def _handle_click(self, zone: str) -> None:
         try:
-            if zone == "top":
-                # Show mode-switch bubble
-                current = self._get_current_mode()
-                target = self._get_next_mode(current)
-                if win32gui:
-                    rect = win32gui.GetWindowRect(self._hwnd)
-                    self._bubble.show_mode_bubble(current, target, rect)
-            elif zone == "bottom":
-                # Show chat bubble
-                if win32gui:
-                    rect = win32gui.GetWindowRect(self._hwnd)
-                    self._bubble.show_chat_bubble(rect)
-            elif self._on_action:
+            # TEMP: bypass bubbles to test if they cause the crash
+            # if zone == "top":
+            #     current = self._get_current_mode()
+            #     target = self._get_next_mode(current)
+            #     if win32gui:
+            #         rect = win32gui.GetWindowRect(self._hwnd)
+            #         self._bubble.show_mode_bubble(current, target, rect)
+            # elif zone == "bottom":
+            #     if win32gui:
+            #         rect = win32gui.GetWindowRect(self._hwnd)
+            #         self._bubble.show_chat_bubble(rect)
+            # el
+            if self._on_action:
                 self._on_action(zone)
         except Exception as e:
             self._log_error(f"Handle click error: {e}")
