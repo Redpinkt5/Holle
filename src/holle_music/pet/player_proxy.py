@@ -71,6 +71,16 @@ class PetPlayer:
         elif self._standalone_player is not None:
             self._standalone_player.previous()
 
+    def seek(self, position: float) -> None:
+        """Seek to position in seconds."""
+        if not self._is_main_app_running() and self._standalone_player is not None:
+            self._standalone_player.seek(position)
+
+    def set_volume(self, volume: float) -> None:
+        """Set volume 0.0-1.0."""
+        if not self._is_main_app_running() and self._standalone_player is not None:
+            self._standalone_player.set_volume(volume)
+
     def cycle_mode(self) -> None:
         if self._is_main_app_running():
             self._send_cmd("mode")
