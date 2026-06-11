@@ -19,6 +19,7 @@ except ImportError:  # pragma: no cover
     win32gui = None  # type: ignore[assignment]
     win32ui = None  # type: ignore[assignment]
 
+from holle_music.pet.bubble import BubbleManager
 from holle_music.pet.click_zone import ClickZone
 from holle_music.pet.renderer import MascotRenderer, CELL_W, CELL_H, PADDING
 from holle_music.widgets import Mascot as MascotWidget
@@ -52,6 +53,7 @@ class PetWindow:
         self._running = True
         self._size = self._calc_size()
         self._on_player_state_check: Callable[[], bool] | None = None
+        self._bubble = BubbleManager(0, on_action=on_action)
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -65,6 +67,7 @@ class PetWindow:
         if not self._hwnd:
             return
 
+        self._bubble._parent_hwnd = self._hwnd
         self._update_display()
 
         # Message loop using ctypes PeekMessage for proper non-blocking behavior
@@ -113,6 +116,7 @@ class PetWindow:
                     pass
 
             self._update_animation()
+            self._bubble.check_auto_hide()
             time.sleep(0.016)  # ~60fps
 
         self._save_position()
@@ -219,6 +223,10 @@ class PetWindow:
             press_duration = time.monotonic() - self._drag_start_time
             is_click = (not self._drag_has_moved) and (press_duration < 0.2)
             if is_click and self._drag_click_pos:
+                # If bubble is visible, let it handle the click first
+                if self._bubble._visible:
+                    if self._bubble.on_click(x, y):
+                        return 0
                 zone = self._click_zone.detect(x, y, *self._size)
                 if zone:
                     self._handle_click(zone)
@@ -420,8 +428,29 @@ class PetWindow:
     # ── Click handling ────────────────────────────────────────────────────
 
     def _handle_click(self, zone: str) -> None:
-        if self._on_action:
+        if zone == "top":
+            # Show mode-switch bubble
+            current = self._get_current_mode()
+            target = self._get_next_mode(current)
+            if win32gui:
+                rect = win32gui.GetWindowRect(self._hwnd)
+                self._bubble.show_mode_bubble(current, target, rect)
+        elif zone == "bottom":
+            # Show chat bubble
+            if win32gui:
+                rect = win32gui.GetWindowRect(self._hwnd)
+                self._bubble.show_chat_bubble(rect)
+        elif self._on_action:
             self._on_action(zone)
+
+    def _get_current_mode(self) -> str:
+        # TODO: get current mode from player_proxy
+        return "sequential"
+
+    def _get_next_mode(self, current: str) -> str:
+        modes = ["sequential", "random", "repeat"]
+        idx = modes.index(current) if current in modes else 0
+        return modes[(idx + 1) % len(modes)]
 
     # ── Context menu ──────────────────────────────────────────────────────
 
