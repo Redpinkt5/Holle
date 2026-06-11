@@ -26,8 +26,6 @@ from holle_music.widgets import (
     get_shimmer_palette,
 )
 from holle_music.minimax_api import MiniMaxService
-from holle_music.pet.window import PetWindow
-from holle_music.pet.chat_dialog import ChatDialog
 
 
 class CommandType(Enum):
@@ -382,6 +380,27 @@ class HolleMusicApp(App):
         except Exception:
             pass
 
+    def _write_full_pet_state(self) -> None:
+        import json, time
+        song = self.player.current_song
+        state = {
+            "playing": self.player.is_playing,
+            "song": {"title": song.title, "artist": song.artist, "path": str(song.path)} if song else None,
+            "mode": self.player.play_mode,
+            "volume": int(self.player.volume * 100),
+            "position": self.player.get_playback_position_ms() / 1000.0,
+            "playlist": [
+                {"title": s.title, "artist": s.artist, "path": str(s.path)}
+                for s in self.player.playlist
+            ],
+            "time": time.time(),
+        }
+        try:
+            path = Path.home() / ".holle_music" / "pet_state.json"
+            path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
     def _read_pet_cmd(self) -> None:
         import json, time
         path = Path.home() / ".holle_music" / "pet_cmd.json"
@@ -405,9 +424,36 @@ class HolleMusicApp(App):
                 self._sync_playlist_selection()
             elif cmd == "mode":
                 self._cycle_play_mode()
+            elif cmd.startswith("play:"):
+                title = cmd[5:]
+                self._play_by_title(title)
+            elif cmd.startswith("volume:"):
+                try:
+                    vol = int(cmd[7:]) / 100
+                    self.player.set_volume(vol)
+                    self.query_one("#visualizer", Visualizer).volume_bar.set_volume(vol)
+                    self._notify_chat(f"音量: {int(vol * 100)}%")
+                except ValueError:
+                    pass
+            elif cmd.startswith("mode:"):
+                mode = cmd[5:]
+                if mode in ("sequential", "random", "repeat"):
+                    self.player.set_play_mode(mode)
+                    self._notify_chat(f"模式已切换为: {mode}")
             path.unlink(missing_ok=True)
         except Exception:
             pass
+
+    def _play_by_title(self, title: str) -> None:
+        songs = self._original_songs or list(self.player.playlist)
+        for s in songs:
+            if title.lower() in s.title.lower():
+                self.player.play(s)
+                self._update_controls_ui()
+                self._sync_playlist_selection()
+                self._notify_chat(f"正在播放: {s.title}")
+                return
+        self._notify_chat(f"未找到歌曲: {title}")
 
     def _cycle_play_mode(self) -> None:
         modes = ["sequential", "random", "repeat"]
@@ -607,46 +653,24 @@ class HolleMusicApp(App):
 
     @on(Controls.PetLaunch)
     def on_controls_pet_launch(self, event: Controls.PetLaunch) -> None:
-        """Launch desktop pet window in a background thread."""
-        import threading
+        """Save full state, launch desktop pet as independent process, and exit terminal."""
+        import subprocess, sys
 
-        if getattr(self, "_pet_window", None) is not None:
-            return  # already running
+        # Save complete playback state for the pet
+        self._write_full_pet_state()
 
-        chat = ChatDialog()
+        # Launch pet as independent process
+        try:
+            subprocess.Popen(
+                [sys.executable, "-m", "holle_music.pet.window"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0,
+            )
+        except Exception as e:
+            self._notify_chat(f"桌宠启动失败: {e}")
+            return
 
-        def on_action(zone: str) -> None:
-            if zone == "center":
-                self.player.toggle_play_pause()
-            elif zone == "left":
-                self.player.previous()
-            elif zone == "right":
-                self.player.next()
-            elif zone == "top":
-                self._cycle_play_mode()
-            elif zone == "bottom":
-                try:
-                    import win32api
-                    sw = win32api.GetSystemMetrics(0)
-                    sh = win32api.GetSystemMetrics(1)
-                    x = sw // 2 - 160
-                    y = sh // 2 - 120
-                except ImportError:
-                    x, y = 100, 100
-                chat.show(x, y)
-
-        def _run_pet() -> None:
-            try:
-                window = PetWindow(on_action=on_action, dialog=chat)
-                self._pet_window = window
-                window.show()
-            except Exception as e:
-                print(f"Pet error: {e}")
-            finally:
-                self._pet_window = None
-
-        threading.Thread(target=_run_pet, daemon=True).start()
-        self._notify_chat("🐾 桌宠已启动")
+        self._notify_chat("🐾 桌宠已启动，终端即将退出")
+        self.exit()
 
     def on_mouse_move(self, event) -> None:
         self.query_one("#controls", Controls).update_mouse(
