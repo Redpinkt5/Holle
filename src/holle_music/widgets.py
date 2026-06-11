@@ -768,6 +768,11 @@ class Controls(Static):
             super().__init__()
             self.mode = mode  # "sequential", "repeat", "random"
 
+    class PetLaunch(Message):
+        """Request to launch the desktop pet window."""
+
+        pass
+
     _PREV = "\n\n\n█\n"
     _NEXT = "\n\n\n█\n"
     _mode: str = "sequential"
@@ -778,6 +783,7 @@ class Controls(Static):
             with Horizontal(id="controls-top"):
                 yield Mascot(id="mascot")
                 yield Static("", id="clock")
+                yield Button(" 🐾 ", id="btn-pet", variant="primary")
             with Horizontal(id="controls-modes"):
                 yield Button(" ⭢ ", id="btn-mode-seq", classes="mode-btn")
                 yield Button(" ↬ ", id="btn-mode-rand", classes="mode-btn")
@@ -823,6 +829,8 @@ class Controls(Static):
             self.post_message(self.PrevNext("prev"))
         elif bid == "btn-next":
             self.post_message(self.PrevNext("next"))
+        elif bid == "btn-pet":
+            self.post_message(self.PetLaunch())
         elif bid == "btn-mode-seq":
             self._mode = "sequential"
             self._update_mode_buttons()

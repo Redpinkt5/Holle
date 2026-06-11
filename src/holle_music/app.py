@@ -26,6 +26,8 @@ from holle_music.widgets import (
     get_shimmer_palette,
 )
 from holle_music.minimax_api import MiniMaxService
+from holle_music.pet.window import PetWindow
+from holle_music.pet.chat_dialog import ChatDialog
 
 
 class CommandType(Enum):
@@ -602,6 +604,49 @@ class HolleMusicApp(App):
         elif mode == "repeat":
             panel.border_title = "✻ Playlist ⟳"
             self._notify_chat("单曲循环模式已开启")
+
+    @on(Controls.PetLaunch)
+    def on_controls_pet_launch(self, event: Controls.PetLaunch) -> None:
+        """Launch desktop pet window in a background thread."""
+        import threading
+
+        if getattr(self, "_pet_window", None) is not None:
+            return  # already running
+
+        chat = ChatDialog()
+
+        def on_action(zone: str) -> None:
+            if zone == "center":
+                self.player.toggle_play_pause()
+            elif zone == "left":
+                self.player.previous()
+            elif zone == "right":
+                self.player.next()
+            elif zone == "top":
+                self._cycle_play_mode()
+            elif zone == "bottom":
+                try:
+                    import win32api
+                    sw = win32api.GetSystemMetrics(0)
+                    sh = win32api.GetSystemMetrics(1)
+                    x = sw // 2 - 160
+                    y = sh // 2 - 120
+                except ImportError:
+                    x, y = 100, 100
+                chat.show(x, y)
+
+        def _run_pet() -> None:
+            try:
+                window = PetWindow(on_action=on_action, dialog=chat)
+                self._pet_window = window
+                window.show()
+            except Exception as e:
+                print(f"Pet error: {e}")
+            finally:
+                self._pet_window = None
+
+        threading.Thread(target=_run_pet, daemon=True).start()
+        self._notify_chat("🐾 桌宠已启动")
 
     def on_mouse_move(self, event) -> None:
         self.query_one("#controls", Controls).update_mouse(
