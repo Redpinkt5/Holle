@@ -35,7 +35,7 @@ def main() -> None:
                 x, y = 100, 100
             chat.show(x, y)
 
-    window = PetWindow(on_action=on_action)
+    window = PetWindow(on_action=on_action, dialog=chat)
 
     print("Holle Pet started!")
     print("Click: center=play/pause | left/right=prev/next | top=mode | bottom=chat")

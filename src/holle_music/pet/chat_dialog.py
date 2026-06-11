@@ -23,6 +23,7 @@ class ChatDialog:
     """Floating frameless chat window."""
 
     def __init__(self) -> None:
+        self._root: tk.Tk | None = None
         self._window: tk.Toplevel | None = None
         self._canvas: tk.Canvas | None = None
         self._scrollable_frame: tk.Frame | None = None
@@ -39,6 +40,12 @@ class ChatDialog:
             self._window.lift()
             return
 
+        # Create hidden Tk root if needed
+        if self._root is None or not self._root.winfo_exists():
+            self._root = tk.Tk()
+            self._root.withdraw()
+            self._root.overrideredirect(True)
+
         self._build_window(x, y)
 
     def hide(self) -> None:
@@ -49,6 +56,15 @@ class ChatDialog:
         self._canvas = None
         self._scrollable_frame = None
         self._entry = None
+
+    def update(self) -> None:
+        """Process pending tkinter events — called by main loop."""
+        if self._root is not None and self._root.winfo_exists():
+            try:
+                self._root.update_idletasks()
+                self._root.update()
+            except tk.TclError:
+                pass
 
     # ── Window construction ───────────────────────────────────────────────
 

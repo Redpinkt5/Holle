@@ -38,10 +38,15 @@ _SHIMMER_COLORS = [
 class PetWindow:
     """Windows desktop pet window using pywin32 with WS_EX_LAYERED transparent background."""
 
-    def __init__(self, on_action: Callable[[str], None] | None = None) -> None:
+    def __init__(
+        self,
+        on_action: Callable[[str], None] | None = None,
+        dialog: object | None = None,
+    ) -> None:
         self._renderer = MascotRenderer()
         self._click_zone = ClickZone()
         self._on_action = on_action
+        self._dialog = dialog
         self._hwnd: int = 0
         self._dragging = False
         self._drag_start = (0, 0)
@@ -96,6 +101,16 @@ class PetWindow:
 
             if not self._running:
                 break
+
+            # Track mouse globally (even outside window) for eye direction
+            self._track_mouse_global()
+
+            # Update tkinter dialog if open
+            if self._dialog is not None:
+                try:
+                    self._dialog.update()
+                except Exception:
+                    pass
 
             self._update_animation()
             time.sleep(0.016)  # ~60fps
@@ -222,6 +237,17 @@ class PetWindow:
             return 0
 
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
+
+    def _track_mouse_global(self) -> None:
+        """Update eye direction based on global mouse position."""
+        try:
+            mx, my = win32api.GetCursorPos()
+            rect = win32gui.GetWindowRect(self._hwnd)
+            rel_x = mx - rect[0]
+            rel_y = my - rect[1]
+            self._update_eye_direction(rel_x, rel_y)
+        except Exception:
+            pass
 
     # ── Eye direction ─────────────────────────────────────────────────────
 
