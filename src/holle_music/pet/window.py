@@ -462,24 +462,24 @@ class PetWindow:
     def _handle_click(self, zone: str) -> None:
         print(f"[PET] Click zone: {zone}")
         try:
-            # TEMP: bypass bubbles to test if they cause the crash
-            # if zone == "top":
-            #     current = self._get_current_mode()
-            #     target = self._get_next_mode(current)
-            #     if win32gui:
-            #         rect = win32gui.GetWindowRect(self._hwnd)
-            #         self._bubble.show_mode_bubble(current, target, rect)
-            # elif zone == "bottom":
-            #     if win32gui:
-            #         rect = win32gui.GetWindowRect(self._hwnd)
-            #         self._bubble.show_chat_bubble(rect)
-            # el
-            if self._on_action:
+            if zone == "top":
+                current = self._get_current_mode()
+                target = self._get_next_mode(current)
+                if win32gui:
+                    rect = win32gui.GetWindowRect(self._hwnd)
+                    print(f"[PET] Showing mode bubble: {current} -> {target}")
+                    self._bubble.show_mode_bubble(current, target, rect)
+            elif zone == "bottom":
+                # TEMP: chat input disabled to prevent tkinter crash
+                # if win32gui:
+                #     rect = win32gui.GetWindowRect(self._hwnd)
+                #     self._bubble.show_chat_bubble(rect)
+                if self._on_action:
+                    self._on_action(zone)
+            elif self._on_action:
                 print(f"[PET] Calling on_action('{zone}')")
                 self._on_action(zone)
                 print(f"[PET] on_action('{zone}') done")
-            else:
-                print(f"[PET] No on_action handler")
         except Exception as e:
             print(f"[PET] Handle click error: {e}")
             self._log_error(f"Handle click error: {e}")

@@ -211,12 +211,113 @@ class BubbleManager:
             win32gui.UpdateWindow(self._hwnd)
 
     def _update_layered(self, img) -> None:
-        """Update layered window content from a Pillow RGBA image.
+        """Update layered window content from a Pillow RGBA image."""
+        if not self._hwnd or win32gui is None:
+            return
 
-        NOTE: This is a placeholder.  The full DIB-section implementation
-        will be shared with PetWindow after the window.py refactor.
-        """
-        pass  # TODO: implement DIB section rendering (see PetWindow._update_display)
+        import ctypes
+        from ctypes import wintypes
+
+        w, h = img.size
+        img_bytes = img.tobytes("raw", "BGRA")
+        gdi32 = ctypes.windll.gdi32
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ("biSize", wintypes.DWORD),
+                ("biWidth", wintypes.LONG),
+                ("biHeight", wintypes.LONG),
+                ("biPlanes", wintypes.WORD),
+                ("biBitCount", wintypes.WORD),
+                ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD),
+                ("biXPelsPerMeter", wintypes.LONG),
+                ("biYPelsPerMeter", wintypes.LONG),
+                ("biClrUsed", wintypes.DWORD),
+                ("biClrImportant", wintypes.DWORD),
+            ]
+
+        class RGBQUAD(ctypes.Structure):
+            _fields_ = [
+                ("rgbBlue", wintypes.BYTE),
+                ("rgbGreen", wintypes.BYTE),
+                ("rgbRed", wintypes.BYTE),
+                ("rgbReserved", wintypes.BYTE),
+            ]
+
+        class BITMAPINFO(ctypes.Structure):
+            _fields_ = [
+                ("bmiHeader", BITMAPINFOHEADER),
+                ("bmiColors", RGBQUAD * 1),
+            ]
+
+        bmi = BITMAPINFO()
+        bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.bmiHeader.biWidth = w
+        bmi.bmiHeader.biHeight = -h
+        bmi.bmiHeader.biPlanes = 1
+        bmi.bmiHeader.biBitCount = 32
+        bmi.bmiHeader.biCompression = 0
+
+        hdc_screen = win32gui.GetDC(0)
+        hdc_mem = win32gui.CreateCompatibleDC(hdc_screen)
+
+        ppvBits = ctypes.c_void_p()
+        hbmp = gdi32.CreateDIBSection(
+            hdc_screen,
+            ctypes.byref(bmi),
+            0,
+            ctypes.byref(ppvBits),
+            None,
+            0,
+        )
+
+        if hbmp and ppvBits.value:
+            ctypes.memmove(ppvBits.value, img_bytes, len(img_bytes))
+
+        old_bmp = win32gui.SelectObject(hdc_mem, hbmp)
+
+        class _POINT(ctypes.Structure):
+            _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+        class _SIZE(ctypes.Structure):
+            _fields_ = [("cx", wintypes.LONG), ("cy", wintypes.LONG)]
+
+        class _BLENDFUNCTION(ctypes.Structure):
+            _fields_ = [
+                ("BlendOp", wintypes.BYTE),
+                ("BlendFlags", wintypes.BYTE),
+                ("SourceConstantAlpha", wintypes.BYTE),
+                ("AlphaFormat", wintypes.BYTE),
+            ]
+
+        rect = win32gui.GetWindowRect(self._hwnd)
+        pt_src = _POINT(0, 0)
+        sz = _SIZE(w, h)
+        pt_dst = _POINT(rect[0], rect[1])
+        blend = _BLENDFUNCTION()
+        blend.BlendOp = win32con.AC_SRC_OVER
+        blend.BlendFlags = 0
+        blend.SourceConstantAlpha = 255
+        blend.AlphaFormat = win32con.AC_SRC_ALPHA
+
+        user32 = ctypes.windll.user32
+        user32.UpdateLayeredWindow(
+            self._hwnd,
+            hdc_screen,
+            ctypes.byref(pt_dst),
+            ctypes.byref(sz),
+            hdc_mem,
+            ctypes.byref(pt_src),
+            0,
+            ctypes.byref(blend),
+            win32con.ULW_ALPHA,
+        )
+
+        win32gui.SelectObject(hdc_mem, old_bmp)
+        win32gui.DeleteObject(hbmp)
+        win32gui.DeleteDC(hdc_mem)
+        win32gui.ReleaseDC(0, hdc_screen)
 
     def _embed_entry(self, w: int, h: int, x: int, y: int) -> None:
         """Embed a tkinter Entry widget at the bottom of the chat bubble."""
