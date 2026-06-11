@@ -20,7 +20,7 @@ except ImportError:  # pragma: no cover
     win32ui = None  # type: ignore[assignment]
 
 from holle_music.pet.click_zone import ClickZone
-from holle_music.pet.renderer import MascotRenderer, CELL_SIZE, PADDING
+from holle_music.pet.renderer import MascotRenderer, CELL_W, CELL_H, PADDING
 from holle_music.widgets import Mascot as MascotWidget
 
 
@@ -95,8 +95,8 @@ class PetWindow:
     # ── Window creation ───────────────────────────────────────────────────
 
     def _calc_size(self) -> tuple[int, int]:
-        width = MascotWidget.COLS * CELL_SIZE + PADDING * 2
-        height = MascotWidget.ROWS * CELL_SIZE + PADDING * 2
+        width = MascotWidget.COLS * CELL_W + PADDING * 2
+        height = MascotWidget.ROWS * CELL_H + PADDING * 2
         return width, height
 
     def _create_window(self) -> int:
@@ -113,7 +113,6 @@ class PetWindow:
             win32con.WS_EX_LAYERED
             | win32con.WS_EX_TOOLWINDOW
             | win32con.WS_EX_TOPMOST
-            | win32con.WS_EX_TRANSPARENT
         )
 
         hwnd = win32gui.CreateWindowEx(
@@ -136,9 +135,30 @@ class PetWindow:
 
         return hwnd
 
+    # ── Hit-test mask for transparent click-through ───────────────────────
+
+    def _hit_test(self, x: int, y: int) -> bool:
+        """Return True if (x, y) is inside the mascot body (not transparent)."""
+        img = self._renderer.render(self._direction, self._active)
+        if 0 <= x < img.width and 0 <= y < img.height:
+            _, _, _, a = img.getpixel((x, y))
+            return a > 128
+        return False
+
     # ── Window procedure ──────────────────────────────────────────────────
 
     def _wnd_proc(self, hwnd: int, msg: int, wparam: int, lparam: int) -> int:
+        if msg == win32con.WM_NCHITTEST:
+            x = win32api.LOWORD(lparam)
+            y = win32api.HIWORD(lparam)
+            # Convert screen coords to client coords
+            rect = win32gui.GetWindowRect(hwnd)
+            cx = x - rect[0]
+            cy = y - rect[1]
+            if self._hit_test(cx, cy):
+                return win32con.HTCLIENT
+            return win32con.HTTRANSPARENT
+
         if msg == win32con.WM_MOUSEMOVE:
             x = win32api.LOWORD(lparam)
             y = win32api.HIWORD(lparam)
@@ -240,15 +260,6 @@ class PetWindow:
         img = self._renderer.render(self._direction, self._active, color)
         w, h = img.size
 
-        hdc_screen = win32gui.GetDC(0)
-        hdc_mem = win32ui.CreateDCFromHandle(hdc_screen)
-        hdc_compatible = hdc_mem.CreateCompatibleDC()
-
-        bmp = win32ui.CreateBitmap()
-        bmp.CreateCompatibleBitmap(hdc_mem, w, h)
-        hdc_compatible.SelectObject(bmp)
-
-        # Convert PIL to DIB via ctypes CreateDIBSection
         img_bytes = img.tobytes("raw", "BGRA")
 
         import ctypes
@@ -311,7 +322,7 @@ class PetWindow:
 
         old_bmp = win32gui.SelectObject(hdc_mem, hbmp)
 
-        # Use ctypes structures for UpdateLayeredWindow (avoids pywintypes trimming)
+        # ctypes structures for UpdateLayeredWindow (avoids pywintypes trimming)
         class _POINT(ctypes.Structure):
             _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
 
