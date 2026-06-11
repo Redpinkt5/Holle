@@ -42,6 +42,7 @@ class PetWindow:
         self._drag_start = (0, 0)
         self._drag_click_pos: tuple[int, int] | None = None
         self._drag_has_moved = False
+        self._drag_start_time = 0.0
         self._window_pos = self._load_position()
         self._last_eye_update = 0.0
         self._direction = "center"
@@ -208,14 +209,16 @@ class PetWindow:
             self._drag_has_moved = False
             self._drag_start = win32api.GetCursorPos()
             self._drag_click_pos = (x, y)
+            self._drag_start_time = time.monotonic()
             return 0
 
         if msg == win32con.WM_LBUTTONUP:
             x = win32api.LOWORD(lparam)
             y = win32api.HIWORD(lparam)
             self._dragging = False
-            # Only trigger click if we didn't move significantly
-            if not self._drag_has_moved and self._drag_click_pos:
+            press_duration = time.monotonic() - self._drag_start_time
+            is_click = (not self._drag_has_moved) and (press_duration < 0.2)
+            if is_click and self._drag_click_pos:
                 zone = self._click_zone.detect(x, y, *self._size)
                 if zone:
                     self._handle_click(zone)
