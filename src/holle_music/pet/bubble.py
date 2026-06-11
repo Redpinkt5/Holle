@@ -49,6 +49,7 @@ class BubbleManager:
         self._shown_at: float = 0.0
         self._auto_hide_delay: float = 3.0
         self._hovering: bool = False
+        self._visible: bool = False
 
         # tkinter input for chat mode
         self._tk_root: tk.Tk | None = None
@@ -89,6 +90,7 @@ class BubbleManager:
         self._ensure_window(w, h, x, y)
         self._update_layered(img)
         self._show_window()
+        self._visible = True
 
     def show_chat_bubble(
         self,
@@ -106,6 +108,7 @@ class BubbleManager:
         self._ensure_window(w, h, x, y)
         self._update_layered(img)
         self._show_window()
+        self._visible = True
         self._embed_entry(w, h, x, y)
 
     def hide(self) -> None:
@@ -114,6 +117,7 @@ class BubbleManager:
             win32gui.ShowWindow(self._hwnd, win32con.SW_HIDE)
         self._destroy_entry()
         self._mode = None
+        self._visible = False
         self._confirm_bbox = None
         self._cancel_bbox = None
 
