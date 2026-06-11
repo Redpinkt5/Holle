@@ -10,7 +10,7 @@ from holle_music.widgets import Mascot
 CELL_W: int = 10   # terminal char width
 CELL_H: int = 20   # terminal char height (2x width for square aspect)
 PADDING: int = 4
-DEFAULT_BODY_COLOR: str = "#ff69b4"
+DEFAULT_BODY_COLOR: str = "#ffffff"
 
 
 class MascotRenderer:
@@ -62,13 +62,5 @@ class MascotRenderer:
             y0 = PADDING + row * CELL_H
             x1 = x0 + CELL_W - 1
             y1 = y0 + CELL_H - 1
-            # White sclera
-            draw.rectangle([x0, y0, x1, y1], fill="#ffffff")
-            # Black pupil (centered small square)
-            pupil_w = max(2, CELL_W // 3)
-            pupil_h = max(2, CELL_H // 3)
-            px0 = x0 + (CELL_W - pupil_w) // 2
-            py0 = y0 + (CELL_H - pupil_h) // 2
-            px1 = px0 + pupil_w - 1
-            py1 = py0 + pupil_h - 1
-            draw.rectangle([px0, py0, px1, py1], fill="#000000")
+            # Solid black eye (no sclera)
+            draw.rectangle([x0, y0, x1, y1], fill="#000000")

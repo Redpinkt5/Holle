@@ -45,6 +45,7 @@ class PetWindow:
         self._hwnd: int = 0
         self._dragging = False
         self._drag_start = (0, 0)
+        self._drag_click_pos: tuple[int, int] | None = None
         self._window_pos = self._load_position()
         self._direction = "center"
         self._active = False
@@ -66,14 +67,14 @@ class PetWindow:
 
         self._update_display()
 
-        # Message loop with timer for animation
+        # Message loop: PeekMessage for non-blocking + animation
         while self._running:
-            if win32gui.PeekMessage(None, 0, 0, win32con.PM_REMOVE):
-                msg = win32gui.GetMessage(None, 0, 0)
-                if msg[0] == 0:
+            ret, msg = win32gui.PeekMessage(None, 0, 0, win32con.PM_REMOVE)
+            if ret != 0:
+                if msg.message == win32con.WM_QUIT:
                     break
-                win32gui.TranslateMessage(msg[1])
-                win32gui.DispatchMessage(msg[1])
+                win32gui.TranslateMessage(msg)
+                win32gui.DispatchMessage(msg)
             else:
                 self._update_animation()
                 time.sleep(1 / 30)
@@ -135,39 +136,19 @@ class PetWindow:
 
         return hwnd
 
-    # ── Hit-test mask for transparent click-through ───────────────────────
-
-    def _hit_test(self, x: int, y: int) -> bool:
-        """Return True if (x, y) is inside the mascot body (not transparent)."""
-        img = self._renderer.render(self._direction, self._active)
-        if 0 <= x < img.width and 0 <= y < img.height:
-            _, _, _, a = img.getpixel((x, y))
-            return a > 128
-        return False
-
     # ── Window procedure ──────────────────────────────────────────────────
 
     def _wnd_proc(self, hwnd: int, msg: int, wparam: int, lparam: int) -> int:
-        if msg == win32con.WM_NCHITTEST:
-            x = win32api.LOWORD(lparam)
-            y = win32api.HIWORD(lparam)
-            # Convert screen coords to client coords
-            rect = win32gui.GetWindowRect(hwnd)
-            cx = x - rect[0]
-            cy = y - rect[1]
-            if self._hit_test(cx, cy):
-                return win32con.HTCLIENT
-            return win32con.HTTRANSPARENT
-
         if msg == win32con.WM_MOUSEMOVE:
             x = win32api.LOWORD(lparam)
             y = win32api.HIWORD(lparam)
             if self._dragging:
                 cx, cy = win32api.GetCursorPos()
-                sx, sy = self._drag_start
+                dx = cx - self._drag_start[0]
+                dy = cy - self._drag_start[1]
                 self._window_pos = (
-                    self._window_pos[0] + cx - sx,
-                    self._window_pos[1] + cy - sy,
+                    self._window_pos[0] + dx,
+                    self._window_pos[1] + dy,
                 )
                 self._drag_start = (cx, cy)
                 win32gui.SetWindowPos(
@@ -186,16 +167,23 @@ class PetWindow:
         if msg == win32con.WM_LBUTTONDOWN:
             x = win32api.LOWORD(lparam)
             y = win32api.HIWORD(lparam)
-            zone = self._click_zone.detect(x, y, *self._size)
-            if zone:
-                self._handle_click(zone)
-            else:
-                self._dragging = True
-                self._drag_start = win32api.GetCursorPos()
+            self._dragging = True
+            self._drag_start = win32api.GetCursorPos()
+            self._drag_click_pos = (x, y)
             return 0
 
         if msg == win32con.WM_LBUTTONUP:
+            x = win32api.LOWORD(lparam)
+            y = win32api.HIWORD(lparam)
             self._dragging = False
+            # If moved less than 5px, treat as click
+            if self._drag_click_pos:
+                dx = abs(x - self._drag_click_pos[0])
+                dy = abs(y - self._drag_click_pos[1])
+                if dx < 5 and dy < 5:
+                    zone = self._click_zone.detect(x, y, *self._size)
+                    if zone:
+                        self._handle_click(zone)
             return 0
 
         if msg == win32con.WM_RBUTTONUP:
