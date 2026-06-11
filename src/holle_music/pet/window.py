@@ -9,13 +9,11 @@ from pathlib import Path
 from typing import Callable
 
 try:
-    import pywintypes
     import win32api
     import win32con
     import win32gui
     import win32ui
 except ImportError:  # pragma: no cover
-    pywintypes = None  # type: ignore[assignment]
     win32api = None  # type: ignore[assignment]
     win32con = None  # type: ignore[assignment]
     win32gui = None  # type: ignore[assignment]
@@ -313,25 +311,40 @@ class PetWindow:
 
         old_bmp = win32gui.SelectObject(hdc_mem, hbmp)
 
-        point_src = pywintypes.POINT(0, 0)
-        size = pywintypes.SIZE(w, h)
-        point_dst = pywintypes.POINT(self._window_pos[0], self._window_pos[1])
-        blend = {
-            "BlendOp": win32con.AC_SRC_OVER,
-            "BlendFlags": 0,
-            "SourceConstantAlpha": 255,
-            "AlphaFormat": win32con.AC_SRC_ALPHA,
-        }
+        # Use ctypes structures for UpdateLayeredWindow (avoids pywintypes trimming)
+        class _POINT(ctypes.Structure):
+            _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
 
-        win32gui.UpdateLayeredWindow(
+        class _SIZE(ctypes.Structure):
+            _fields_ = [("cx", wintypes.LONG), ("cy", wintypes.LONG)]
+
+        class _BLENDFUNCTION(ctypes.Structure):
+            _fields_ = [
+                ("BlendOp", wintypes.BYTE),
+                ("BlendFlags", wintypes.BYTE),
+                ("SourceConstantAlpha", wintypes.BYTE),
+                ("AlphaFormat", wintypes.BYTE),
+            ]
+
+        pt_src = _POINT(0, 0)
+        sz = _SIZE(w, h)
+        pt_dst = _POINT(self._window_pos[0], self._window_pos[1])
+        blend = _BLENDFUNCTION()
+        blend.BlendOp = win32con.AC_SRC_OVER
+        blend.BlendFlags = 0
+        blend.SourceConstantAlpha = 255
+        blend.AlphaFormat = win32con.AC_SRC_ALPHA
+
+        user32 = ctypes.windll.user32
+        user32.UpdateLayeredWindow(
             self._hwnd,
             hdc_screen,
-            point_dst,
-            size,
+            ctypes.byref(pt_dst),
+            ctypes.byref(sz),
             hdc_mem,
-            point_src,
+            ctypes.byref(pt_src),
             0,
-            blend,
+            ctypes.byref(blend),
             win32con.ULW_ALPHA,
         )
 
