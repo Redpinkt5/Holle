@@ -5,7 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Callable
 
-BG = "#151515"
+BG = "#000000"
 ACCENT = "#ff69b4"
 FG = "white"
 
@@ -52,7 +52,7 @@ class BubbleManager:
         self._input_win.configure(bg=BG)
         self._input_win.bind("<Escape>", lambda _e: self._destroy_input())
 
-        self._entry = tk.Entry(self._input_win, bg="#333", fg=FG, insertbackground=FG,
+        self._entry = tk.Entry(self._input_win, bg="#111", fg=FG, insertbackground=FG,
                                relief="flat", bd=4, font=("Segoe UI", 10))
         self._entry.pack(side="left", fill="x", expand=True, padx=(4, 2))
         self._entry.bind("<Return>", lambda _e: self._do_send())
