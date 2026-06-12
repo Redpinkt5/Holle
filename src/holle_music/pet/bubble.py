@@ -39,9 +39,11 @@ class BubbleManager:
         self,
         parent_hwnd: int,
         on_action: Callable[[str], None] | None = None,
+        on_chat_submit: Callable[[str], None] | None = None,
     ) -> None:
         self._parent_hwnd = parent_hwnd
         self._on_action = on_action
+        self._on_chat_submit = on_chat_submit
         self._renderer = BubbleRenderer()
         self._hwnd: int = 0
         self._mode: str | None = None  # "mode" or "chat"
@@ -51,16 +53,30 @@ class BubbleManager:
         self._hovering: bool = False
         self._visible: bool = False
 
-        # tkinter input for chat mode
+        # tkinter input for chat mode (pre-create root to avoid creating during event)
         self._tk_root: tk.Tk | None = None
+        self._tk_top: tk.Toplevel | None = None
         self._entry: tk.Entry | None = None
-        self._entry_widget: int = 0  # HWND of the Entry widget
+        self._entry_widget: int = 0
+        self._ensure_tk_root()
 
         # Button hit boxes for mode bubble (set during show)
         self._confirm_bbox: tuple[int, int, int, int] | None = None
         self._cancel_bbox: tuple[int, int, int, int] | None = None
 
         self._register_class()
+
+    def _ensure_tk_root(self) -> None:
+        """Pre-create hidden tkinter root window."""
+        if self._tk_root is not None:
+            return
+        try:
+            self._tk_root = tk.Tk()
+            self._tk_root.withdraw()
+            self._tk_root.overrideredirect(True)
+        except Exception as e:
+            self._log_error(f"Failed to create tkinter root: {e}")
+            self._tk_root = None
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -323,18 +339,19 @@ class BubbleManager:
         """Embed a tkinter Entry widget at the bottom of the chat bubble."""
         try:
             self._destroy_entry()
-
-            self._tk_root = tk.Tk()
-            self._tk_root.withdraw()
-            self._tk_root.overrideredirect(True)
+            self._ensure_tk_root()
+            if self._tk_root is None:
+                return
 
             entry_h = 26
             entry_y = y + h - entry_h - 8
-            self._tk_root.geometry(f"{w - 16}x{entry_h}+{x + 8}+{entry_y}")
-            self._tk_root.attributes("-topmost", True)
+            self._tk_top = tk.Toplevel(self._tk_root)
+            self._tk_top.overrideredirect(True)
+            self._tk_top.geometry(f"{w - 16}x{entry_h}+{x + 8}+{entry_y}")
+            self._tk_top.attributes("-topmost", True)
 
             self._entry = tk.Entry(
-                self._tk_root,
+                self._tk_top,
                 bg="#2d2d2d",
                 fg="#ffffff",
                 insertbackground="#ffffff",
@@ -356,12 +373,12 @@ class BubbleManager:
             except Exception:
                 pass
             self._entry = None
-        if self._tk_root is not None:
+        if self._tk_top is not None:
             try:
-                self._tk_root.destroy()
+                self._tk_top.destroy()
             except Exception:
                 pass
-            self._tk_root = None
+            self._tk_top = None
 
     def _on_entry_send(self) -> None:
         if self._entry is None:
@@ -371,7 +388,9 @@ class BubbleManager:
             return
         self._entry.delete(0, tk.END)
         self.add_message("user", text)
-        if self._on_action:
+        if self._on_chat_submit:
+            self._on_chat_submit(text)
+        elif self._on_action:
             self._on_action(f"chat:{text}")
 
     def _on_mode_click(self, x: int, y: int) -> bool:

@@ -58,6 +58,10 @@ class PetWindow:
         self._on_player_state_check: Callable[[], bool] | None = None
         self._bubble = BubbleManager(0, on_action=on_action)
 
+    def set_chat_submit_callback(self, callback: Callable[[str], None]) -> None:
+        """Set callback for chat message submission."""
+        self._bubble._on_chat_submit = callback
+
     # ── Public API ────────────────────────────────────────────────────────
 
     def show(self) -> None:
@@ -470,12 +474,10 @@ class PetWindow:
                     print(f"[PET] Showing mode bubble: {current} -> {target}")
                     self._bubble.show_mode_bubble(current, target, rect)
             elif zone == "bottom":
-                # TEMP: chat input disabled to prevent tkinter crash
-                # if win32gui:
-                #     rect = win32gui.GetWindowRect(self._hwnd)
-                #     self._bubble.show_chat_bubble(rect)
-                if self._on_action:
-                    self._on_action(zone)
+                if win32gui:
+                    rect = win32gui.GetWindowRect(self._hwnd)
+                    print(f"[PET] Showing chat bubble")
+                    self._bubble.show_chat_bubble(rect)
             elif self._on_action:
                 print(f"[PET] Calling on_action('{zone}')")
                 self._on_action(zone)

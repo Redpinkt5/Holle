@@ -14,7 +14,7 @@ def main() -> None:
     ai = DeepSeekService()
     tools = AITools(player)
 
-    # Try to restore state from terminal
+    # Try to restore state from terminal (do NOT auto-play)
     state = player.get_state()
     if state.get("playlist"):
         from holle_music.models import Song
@@ -22,19 +22,19 @@ def main() -> None:
         player.load_playlist(songs)
 
         if state.get("song"):
-            # Find and play the saved song
-            for s in songs:
+            # Restore current song index without playing
+            for i, s in enumerate(songs):
                 if s.title == state["song"].get("title"):
                     if hasattr(player, '_standalone_player') and player._standalone_player:
-                        player._standalone_player.play(s)
-                        player.seek(state.get("position", 0))
+                        player._standalone_player._current_index = i
                     break
 
         if state.get("volume") is not None:
             player.set_volume(state["volume"] / 100.0)
 
-        if state.get("playing"):
-            player.toggle_play()
+        # Do NOT auto-play; wait for user click
+        # if state.get("playing"):
+        #     player.toggle_play()
 
     def on_action(zone: str) -> None:
         if zone == "center":
@@ -51,6 +51,7 @@ def main() -> None:
 
     window = PetWindow(on_action=on_action)
     window._on_player_state_check = lambda: player.is_playing
+    window.set_chat_submit_callback(on_chat_send)
 
     # AI chat handling
     def on_chat_send(text: str) -> None:
