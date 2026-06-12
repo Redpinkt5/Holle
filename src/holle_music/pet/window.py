@@ -62,6 +62,18 @@ class PetWindow:
         """Set callback for chat message submission."""
         self._bubble._on_chat_submit = callback
 
+    def show_response_bubble(self, text: str) -> None:
+        """Queue an AI response bubble to be shown in main loop."""
+        self._bubble.queue_response(text)
+
+    def _check_pending_bubbles(self) -> None:
+        """Show any queued response bubbles."""
+        if self._bubble._pending_response and win32gui:
+            text = self._bubble._pending_response
+            self._bubble._pending_response = None
+            rect = win32gui.GetWindowRect(self._hwnd)
+            self._bubble.show_response(text, rect)
+
     # ── Public API ────────────────────────────────────────────────────────
 
     def show(self) -> None:
@@ -128,6 +140,7 @@ class PetWindow:
             # Process tkinter events for bubble panel
             try:
                 self._bubble.update()
+                self._check_pending_bubbles()
             except Exception:
                 pass
 
@@ -265,7 +278,8 @@ class PetWindow:
 
         if msg == win32con.WM_DESTROY:
             self._running = False
-            win32gui.KillTimer(hwnd, 1)
+            import ctypes
+            ctypes.windll.user32.KillTimer(hwnd, 1)
             win32gui.PostQuitMessage(0)
             return 0
 
@@ -450,10 +464,13 @@ class PetWindow:
     # ── Click handling ────────────────────────────────────────────────────
 
     def _handle_click(self, zone: str) -> None:
+        # Delegate to bubble system for visual feedback
         if zone in ("top", "bottom") and win32gui:
             rect = win32gui.GetWindowRect(self._hwnd)
-            panel = "mode" if zone == "top" else "chat"
-            self._bubble.show(rect, panel=panel)
+            if zone == "top":
+                self._bubble.show_mode_bubble(rect)
+            elif zone == "bottom":
+                self._bubble.show_input(rect)
         elif self._on_action:
             self._on_action(zone)
 

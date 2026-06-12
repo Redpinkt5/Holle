@@ -83,28 +83,24 @@ def main() -> None:
     def on_chat_send(text: str) -> None:
         if not text:
             return
-        if hasattr(window, '_bubble'):
-            window._bubble.add_message("user", text)
-            window._bubble.refresh_chat()
 
         def ai_worker():
             try:
                 result = ai.chat(text)
+                reply = None
                 if result["type"] == "tool_calls":
                     for call in result["calls"]:
                         tool_result = tools.execute(call["name"], call["arguments"])
                         final = ai.submit_tool_result(call["id"], tool_result)
-                        if hasattr(window, '_bubble') and final.get("content"):
-                            window._bubble.add_message("ai", final["content"])
-                            window._bubble.refresh_chat()
+                        if final.get("content"):
+                            reply = final["content"]
                 elif result.get("content"):
-                    if hasattr(window, '_bubble'):
-                        window._bubble.add_message("ai", result["content"])
-                        window._bubble.refresh_chat()
+                    reply = result["content"]
+                if reply and hasattr(window, 'show_response_bubble'):
+                    window.show_response_bubble(reply)
             except Exception as e:
-                if hasattr(window, '_bubble'):
-                    window._bubble.add_message("ai", f"出错: {e}")
-                    window._bubble.refresh_chat()
+                if hasattr(window, 'show_response_bubble'):
+                    window.show_response_bubble(f"出错: {e}")
 
         import threading
         threading.Thread(target=ai_worker, daemon=True).start()
