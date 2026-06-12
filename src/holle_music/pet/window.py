@@ -136,7 +136,6 @@ class PetWindow:
 
             try:
                 self._update_animation()
-                self._bubble.check_auto_hide()
             except Exception as e:
                 print(f"[PET] Animation error: {e}")
 
@@ -466,18 +465,11 @@ class PetWindow:
     def _handle_click(self, zone: str) -> None:
         print(f"[PET] Click zone: {zone}")
         try:
-            if zone == "top":
-                current = self._get_current_mode()
-                target = self._get_next_mode(current)
-                if win32gui:
-                    rect = win32gui.GetWindowRect(self._hwnd)
-                    print(f"[PET] Showing mode bubble: {current} -> {target}")
-                    self._bubble.show_mode_bubble(current, target, rect)
-            elif zone == "bottom":
-                if win32gui:
-                    rect = win32gui.GetWindowRect(self._hwnd)
-                    print(f"[PET] Showing chat bubble")
-                    self._bubble.show_chat_bubble(rect)
+            if zone in ("top", "bottom") and win32gui:
+                rect = win32gui.GetWindowRect(self._hwnd)
+                panel = "mode" if zone == "top" else "chat"
+                print(f"[PET] Showing panel: {panel}")
+                self._bubble.show(rect, panel=panel)
             elif self._on_action:
                 print(f"[PET] Calling on_action('{zone}')")
                 self._on_action(zone)
