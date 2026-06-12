@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from holle_music.pet.ai_tools import AITools
 from holle_music.pet.deepseek_api import DeepSeekService
 from holle_music.pet.player_proxy import PetPlayer
