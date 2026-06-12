@@ -76,6 +76,7 @@ def main() -> None:
             return
         if hasattr(window, '_bubble'):
             window._bubble.add_message("user", text)
+            window._bubble.refresh_chat()
 
         def ai_worker():
             try:
@@ -86,12 +87,15 @@ def main() -> None:
                         final = ai.submit_tool_result(call["id"], tool_result)
                         if hasattr(window, '_bubble') and final.get("content"):
                             window._bubble.add_message("ai", final["content"])
+                            window._bubble.refresh_chat()
                 elif result.get("content"):
                     if hasattr(window, '_bubble'):
                         window._bubble.add_message("ai", result["content"])
+                        window._bubble.refresh_chat()
             except Exception as e:
                 if hasattr(window, '_bubble'):
                     window._bubble.add_message("ai", f"出错: {e}")
+                    window._bubble.refresh_chat()
 
         import threading
         threading.Thread(target=ai_worker, daemon=True).start()

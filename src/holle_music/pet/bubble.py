@@ -53,11 +53,12 @@ class BubbleManager:
         self._hovering: bool = False
         self._visible: bool = False
 
-        # tkinter input for chat mode (pre-create root to avoid creating during event)
+        # tkinter chat window
         self._tk_root: tk.Tk | None = None
-        self._tk_top: tk.Toplevel | None = None
-        self._entry: tk.Entry | None = None
-        self._entry_widget: int = 0
+        self._chat_window: tk.Toplevel | None = None
+        self._chat_text: tk.Text | None = None
+        self._chat_entry: tk.Entry | None = None
+
         self._ensure_tk_root()
 
         # Button hit boxes for mode bubble (set during show)
@@ -115,29 +116,35 @@ class BubbleManager:
         self,
         pet_rect: tuple[int, int, int, int],
     ) -> None:
-        """Show a chat history bubble above the pet with embedded input."""
+        """Show a tkinter chat window near the pet."""
         try:
             self.hide()
             self._mode = "chat"
             self._shown_at = time.monotonic()
 
-            img = self._renderer.render_chat_bubble(self._messages)
-            w, h = img.size
-            x, y = _calc_position(w, h, pet_rect, above=True)
+            # Use pure tkinter window for chat (better input handling)
+            self._ensure_tk_root()
+            if self._tk_root is None:
+                return
 
-            self._ensure_window(w, h, x, y)
-            self._update_layered(img)
-            self._show_window()
+            self._build_chat_window(pet_rect)
             self._visible = True
-            self._embed_entry(w, h, x, y)
         except Exception as e:
             self._log_error(f"show_chat_bubble error: {e}")
 
     def hide(self) -> None:
-        """Hide the current bubble and clean up tkinter input."""
+        """Hide the current bubble and clean up tkinter chat window."""
         if self._hwnd and win32gui is not None:
-            win32gui.ShowWindow(self._hwnd, win32con.SW_HIDE)
-        self._destroy_entry()
+            try:
+                win32gui.ShowWindow(self._hwnd, win32con.SW_HIDE)
+            except Exception:
+                pass
+        if self._chat_window is not None:
+            try:
+                self._chat_window.destroy()
+            except Exception:
+                pass
+            self._chat_window = None
         self._mode = None
         self._visible = False
         self._confirm_bbox = None
@@ -160,15 +167,6 @@ class BubbleManager:
             return
         if time.monotonic() - self._shown_at > self._auto_hide_delay:
             self.hide()
-
-    def update_tk(self) -> None:
-        """Process pending tkinter events for chat input."""
-        if self._tk_root is not None:
-            try:
-                self._tk_root.update_idletasks()
-                self._tk_root.update()
-            except Exception:
-                pass
 
     def on_click(self, x: int, y: int) -> bool:
         """Handle click inside the bubble window.  Return True if handled."""
@@ -344,74 +342,155 @@ class BubbleManager:
         win32gui.DeleteDC(hdc_mem)
         win32gui.ReleaseDC(0, hdc_screen)
 
-    def _embed_entry(self, w: int, h: int, x: int, y: int) -> None:
-        """Embed a tkinter Entry widget at the bottom of the chat bubble."""
-        try:
-            self._destroy_entry()
-            self._ensure_tk_root()
-            if self._tk_root is None:
-                return
-
-            from holle_music.pet.bubble_renderer import ARROW_HEIGHT, PADDING
-
-            entry_h = 26
-            input_h = 34
-            input_y = h - ARROW_HEIGHT - input_h - PADDING // 2
-            entry_y = y + input_y + (input_h - entry_h) // 2
-
-            self._tk_top = tk.Toplevel(self._tk_root)
-            self._tk_top.overrideredirect(True)
-            self._tk_top.geometry(f"{w - 16}x{entry_h}+{x + 8}+{entry_y}")
-            self._tk_top.attributes("-topmost", True)
-            self._tk_top.lift()
-            self._tk_top.deiconify()
-
-            self._entry = tk.Entry(
-                self._tk_top,
-                bg="#2d2d2d",
-                fg="#ffffff",
-                insertbackground="#ffffff",
-                relief="flat",
-                bd=4,
-                highlightthickness=0,
-                font=("Segoe UI", 10),
-            )
-            self._entry.pack(fill="both", expand=True)
-            self._entry.bind("<Return>", lambda _e: self._on_entry_send())
-            self._entry.focus_force()
-
-            # Process tk events so the widget appears immediately
-            self._tk_root.update_idletasks()
-            self._tk_root.update()
-        except Exception as e:
-            self._log_error(f"_embed_entry error: {e}")
-
-    def _destroy_entry(self) -> None:
-        if self._entry is not None:
-            try:
-                self._entry.destroy()
-            except Exception:
-                pass
-            self._entry = None
-        if self._tk_top is not None:
-            try:
-                self._tk_top.destroy()
-            except Exception:
-                pass
-            self._tk_top = None
-
     def _on_entry_send(self) -> None:
-        if self._entry is None:
+        if self._chat_entry is None:
             return
-        text = self._entry.get().strip()
+        text = self._chat_entry.get().strip()
         if not text:
             return
-        self._entry.delete(0, tk.END)
+        self._chat_entry.delete(0, tk.END)
         self.add_message("user", text)
+        self._refresh_chat_text()
         if self._on_chat_submit:
             self._on_chat_submit(text)
         elif self._on_action:
             self._on_action(f"chat:{text}")
+
+    def _build_chat_window(self, pet_rect: tuple[int, int, int, int]) -> None:
+        """Build a pure tkinter chat window positioned near the pet."""
+        if self._tk_root is None:
+            return
+
+        # Destroy existing chat window if any
+        if self._chat_window is not None:
+            try:
+                self._chat_window.destroy()
+            except Exception:
+                pass
+
+        width = 320
+        height = 260
+        x, y = _calc_position(width, height, pet_rect, above=True)
+
+        self._chat_window = tk.Toplevel(self._tk_root)
+        self._chat_window.overrideredirect(True)
+        self._chat_window.attributes("-topmost", True)
+        self._chat_window.geometry(f"{width}x{height}+{x}+{y}")
+        self._chat_window.configure(bg="#252525")
+
+        # Close on Escape
+        self._chat_window.bind("<Escape>", lambda _e: self.hide())
+
+        # Title bar
+        title_frame = tk.Frame(self._chat_window, bg="#1e1e1e", height=28)
+        title_frame.pack(fill="x")
+        title_frame.pack_propagate(False)
+
+        tk.Label(
+            title_frame,
+            text="Holle Chat",
+            fg="white",
+            bg="#1e1e1e",
+            font=("Segoe UI", 9, "bold"),
+        ).pack(side="left", padx=8, pady=2)
+
+        close_btn = tk.Label(
+            title_frame,
+            text="✕",
+            fg="#ff4444",
+            bg="#1e1e1e",
+            font=("Segoe UI", 10, "bold"),
+            cursor="hand2",
+        )
+        close_btn.pack(side="right", padx=8, pady=2)
+        close_btn.bind("<Button-1>", lambda _e: self.hide())
+
+        # Chat history
+        self._chat_text = tk.Text(
+            self._chat_window,
+            bg="#252525",
+            fg="white",
+            font=("Segoe UI", 10),
+            wrap="word",
+            state="disabled",
+            relief="flat",
+            padx=8,
+            pady=8,
+            highlightthickness=0,
+            bd=0,
+        )
+        self._chat_text.pack(fill="both", expand=True)
+
+        # Input area
+        input_frame = tk.Frame(self._chat_window, bg="#252525")
+        input_frame.pack(fill="x", padx=8, pady=8)
+
+        self._chat_entry = tk.Entry(
+            input_frame,
+            bg="#333333",
+            fg="white",
+            insertbackground="white",
+            relief="flat",
+            bd=6,
+            highlightthickness=0,
+            font=("Segoe UI", 10),
+        )
+        self._chat_entry.pack(side="left", fill="x", expand=True)
+        self._chat_entry.bind("<Return>", lambda _e: self._on_entry_send())
+        self._chat_entry.focus_force()
+
+        send_btn = tk.Label(
+            input_frame,
+            text="➤",
+            fg="#ff69b4",
+            bg="#252525",
+            font=("Segoe UI", 12),
+            cursor="hand2",
+        )
+        send_btn.pack(side="right", padx=(8, 0))
+        send_btn.bind("<Button-1>", lambda _e: self._on_entry_send())
+
+        self._refresh_chat_text()
+
+        # Make window draggable by title bar
+        self._drag_start_x = 0
+        self._drag_start_y = 0
+
+        def start_drag(event):
+            self._drag_start_x = event.x_root - x
+            self._drag_start_y = event.y_root - y
+
+        def do_drag(event):
+            new_x = event.x_root - self._drag_start_x
+            new_y = event.y_root - self._drag_start_y
+            self._chat_window.geometry(f"+{new_x}+{new_y}")
+
+        title_frame.bind("<Button-1>", start_drag)
+        title_frame.bind("<B1-Motion>", do_drag)
+
+    def _refresh_chat_text(self) -> None:
+        """Refresh chat history display."""
+        if self._chat_text is None:
+            return
+        self._chat_text.config(state="normal")
+        self._chat_text.delete("1.0", tk.END)
+        for role, text in self._messages:
+            if role == "user":
+                self._chat_text.insert(tk.END, "你: ", "user")
+                self._chat_text.insert(tk.END, f"{text}\n", "user_text")
+            elif role == "ai":
+                self._chat_text.insert(tk.END, "AI: ", "ai")
+                self._chat_text.insert(tk.END, f"{text}\n\n", "ai_text")
+        self._chat_text.tag_config("user", foreground="#ff69b4", font=("Segoe UI", 9, "bold"))
+        self._chat_text.tag_config("ai", foreground="#aaaaaa", font=("Segoe UI", 9, "bold"))
+        self._chat_text.tag_config("user_text", foreground="white")
+        self._chat_text.tag_config("ai_text", foreground="white")
+        self._chat_text.config(state="disabled")
+        self._chat_text.see(tk.END)
+
+    def refresh_chat(self) -> None:
+        """Public method to refresh chat display after new messages."""
+        self._refresh_chat_text()
 
     def _on_mode_click(self, x: int, y: int) -> bool:
         if self._confirm_bbox and _point_in_rect(x, y, self._confirm_bbox):
