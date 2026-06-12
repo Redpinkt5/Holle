@@ -269,7 +269,8 @@ class PetWindow:
             return 0
 
         if msg == win32con.WM_MOUSEWHEEL:
-            delta = win32api.HIWORD(wparam)
+            import ctypes
+            delta = ctypes.c_short(wparam >> 16).value
             if delta > 0:
                 self._on_action("volume_up") if self._on_action else None
             else:
