@@ -79,9 +79,9 @@ class BubbleRenderer:
         self,
         messages: list[tuple[str, str]],
         width: int = 300,
-        height: int = 220,
+        height: int = 250,
     ) -> Image.Image:
-        """Render a chat history bubble.
+        """Render a chat history bubble with input hint at bottom.
 
         Args:
             messages: List of (role, text) tuples. Role is "user" or "ai".
@@ -90,20 +90,39 @@ class BubbleRenderer:
 
         Returns:
             RGBA Image with rounded-rect background, downward arrow,
-            and up to 5 recent messages aligned left (ai) or right (user).
+            recent messages, and an input-hint area at the bottom.
         """
         img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         font = self._get_font(FONT_SIZE)
+        small_font = self._get_font(FONT_SIZE - 1)
 
         # Background
         self._draw_rounded_rect(draw, (0, 0, width, height - ARROW_HEIGHT), BUBBLE_RADIUS, BG_COLOR)
         self._draw_arrow_down(draw, width // 2, height - ARROW_HEIGHT, ARROW_WIDTH, ARROW_HEIGHT, BG_COLOR)
 
-        # Show last 5 messages
+        # Input area hint at bottom
+        input_h = 34
+        input_y = height - ARROW_HEIGHT - input_h - PADDING // 2
+        self._draw_rounded_rect(
+            draw,
+            (PADDING, input_y, width - PADDING, input_y + input_h),
+            4,
+            (50, 50, 50, 220),
+        )
+        hint = "在下方输入，按 Enter 发送"
+        tw = self._text_width(hint, small_font)
+        draw.text(
+            ((width - tw) // 2, input_y + (input_h - FONT_SIZE) // 2),
+            hint,
+            fill=(180, 180, 180),
+            font=small_font,
+        )
+
+        # Show last 5 messages above input area
         recent = messages[-5:]
         content_top = PADDING // 2
-        content_bottom = height - ARROW_HEIGHT - PADDING // 2
+        content_bottom = input_y - PADDING // 2
         available_h = content_bottom - content_top
         line_h = FONT_SIZE + LINE_SPACING
         max_lines = max(1, available_h // line_h)
@@ -117,7 +136,6 @@ class BubbleRenderer:
             align = "right" if is_user else "left"
 
             wrapped = self._wrap_text(text, max_text_w)
-            # Limit lines per message so we don't overflow
             lines_for_msg = wrapped[:max(1, max_lines // len(recent))]
             for line in lines_for_msg:
                 if y + line_h > content_bottom:

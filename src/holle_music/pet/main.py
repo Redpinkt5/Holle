@@ -16,14 +16,30 @@ def main() -> None:
 
     # Try to restore state from terminal (do NOT auto-play)
     state = player.get_state()
+    playlist_songs = []
     if state.get("playlist"):
         from holle_music.models import Song
-        songs = [Song(**s) for s in state["playlist"]]
-        player.load_playlist(songs)
+        playlist_songs = [Song(**s) for s in state["playlist"]]
+
+    # Fallback: scan default music directory if no playlist
+    if not playlist_songs:
+        default_path = Path("E:/Music")
+        if default_path.exists():
+            try:
+                from holle_music.scanner import Scanner
+                scanner = Scanner()
+                playlist = scanner.scan_to_playlist(default_path, name=default_path.name)
+                playlist_songs = list(playlist.songs)
+                print(f"[PET] Scanned {len(playlist_songs)} songs from {default_path}")
+            except Exception as e:
+                print(f"[PET] Scan failed: {e}")
+
+    if playlist_songs:
+        player.load_playlist(playlist_songs)
 
         if state.get("song"):
             # Restore current song index without playing
-            for i, s in enumerate(songs):
+            for i, s in enumerate(playlist_songs):
                 if s.title == state["song"].get("title"):
                     if hasattr(player, '_standalone_player') and player._standalone_player:
                         player._standalone_player._current_index = i

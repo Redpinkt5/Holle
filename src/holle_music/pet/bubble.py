@@ -343,12 +343,18 @@ class BubbleManager:
             if self._tk_root is None:
                 return
 
+            from holle_music.pet.bubble_renderer import ARROW_HEIGHT, PADDING
+
             entry_h = 26
-            entry_y = y + h - entry_h - 8
+            input_h = 34
+            input_y = h - ARROW_HEIGHT - input_h - PADDING // 2
+            entry_y = y + input_y + (input_h - entry_h) // 2
+
             self._tk_top = tk.Toplevel(self._tk_root)
             self._tk_top.overrideredirect(True)
             self._tk_top.geometry(f"{w - 16}x{entry_h}+{x + 8}+{entry_y}")
             self._tk_top.attributes("-topmost", True)
+            self._tk_top.deiconify()
 
             self._entry = tk.Entry(
                 self._tk_top,
