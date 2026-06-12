@@ -251,10 +251,6 @@ class PetWindow:
                 press_duration = time.monotonic() - self._drag_start_time
                 is_click = (not self._drag_has_moved) and (press_duration < 0.2)
                 if is_click and self._drag_click_pos:
-                    # If bubble is visible, let it handle the click first
-                    if self._bubble._visible:
-                        if self._bubble.on_click(x, y):
-                            return 0
                     zone = self._click_zone.detect(x, y, *self._size)
                     if zone:
                         self._handle_click(zone)
