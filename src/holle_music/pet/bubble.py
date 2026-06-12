@@ -54,14 +54,9 @@ class BubbleManager:
 
         self._entry = tk.Entry(self._input_win, bg="#111", fg=FG, insertbackground=FG,
                                relief="flat", bd=4, font=("Segoe UI", 10))
-        self._entry.pack(side="left", fill="x", expand=True, padx=(4, 2))
+        self._entry.pack(side="left", fill="x", expand=True, padx=4)
         self._entry.bind("<Return>", lambda _e: self._do_send())
         self._entry.after(80, self._entry.focus_force)
-
-        btn = tk.Label(self._input_win, text="➤", fg=ACCENT, bg=BG,
-                       font=("Segoe UI", 12, "bold"), cursor="hand2")
-        btn.pack(side="right", padx=(0, 6))
-        btn.bind("<Button-1>", lambda _e: self._do_send())
 
     # ── response bubble ─────────────────────────────────────────────
 
