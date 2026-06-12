@@ -75,10 +75,8 @@ class PetWindow:
             print("[PET] Failed to create window")
             return
 
-        print(f"[PET] Window created: hwnd={self._hwnd}")
         self._bubble._parent_hwnd = self._hwnd
         self._update_display()
-        print("[PET] Entering message loop")
 
         # Message loop using ctypes PeekMessage for proper non-blocking behavior
         import ctypes
@@ -96,14 +94,11 @@ class PetWindow:
 
         msg = _MSG()
         user32 = ctypes.windll.user32
-        frame = 0
 
         while self._running:
-            frame += 1
             # Process all pending messages
             while user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 1):
                 if msg.message == win32con.WM_QUIT:
-                    print("[PET] WM_QUIT received")
                     self._running = False
                     break
                 user32.TranslateMessage(ctypes.byref(msg))
@@ -119,13 +114,9 @@ class PetWindow:
             now = time.monotonic()
             if self._on_player_state_check is not None and now - self._last_state_check >= 0.5:
                 self._last_state_check = now
-                try:
-                    is_playing = self._on_player_state_check()
-                    if is_playing != self._active:
-                        self.set_active(is_playing)
-                except Exception as e:
-                    if frame % 60 == 0:
-                        print(f"[PET] State check error: {e}")
+                is_playing = self._on_player_state_check()
+                if is_playing != self._active:
+                    self.set_active(is_playing)
 
             # Update tkinter dialog if open
             if self._dialog is not None:
@@ -150,9 +141,7 @@ class PetWindow:
             sleep_time = max(0.0, 0.016 - elapsed)
             time.sleep(sleep_time)
 
-        print("[PET] Message loop ended, saving position")
         self._save_position()
-        print("[PET] Exiting show()")
 
     def set_active(self, active: bool) -> None:
         """Set playing state (triggers shimmer animation)."""
@@ -212,76 +201,72 @@ class PetWindow:
     # ── Window procedure ──────────────────────────────────────────────────
 
     def _wnd_proc(self, hwnd: int, msg: int, wparam: int, lparam: int) -> int:
-        try:
-            if msg == win32con.WM_MOUSEMOVE:
-                x = win32api.LOWORD(lparam)
-                y = win32api.HIWORD(lparam)
-                if self._dragging:
-                    cx, cy = win32api.GetCursorPos()
-                    dx = cx - self._drag_start[0]
-                    dy = cy - self._drag_start[1]
-                    if abs(dx) > 3 or abs(dy) > 3:
-                        self._drag_has_moved = True
-                    self._window_pos = (
-                        self._window_pos[0] + dx,
-                        self._window_pos[1] + dy,
-                    )
-                    self._drag_start = (cx, cy)
-                    win32gui.SetWindowPos(
-                        hwnd,
-                        0,
-                        self._window_pos[0],
-                        self._window_pos[1],
-                        0,
-                        0,
-                        win32con.SWP_NOSIZE | win32con.SWP_NOZORDER,
-                    )
-                else:
-                    self._update_eye_direction(x, y)
-                return 0
+        if msg == win32con.WM_MOUSEMOVE:
+            x = win32api.LOWORD(lparam)
+            y = win32api.HIWORD(lparam)
+            if self._dragging:
+                cx, cy = win32api.GetCursorPos()
+                dx = cx - self._drag_start[0]
+                dy = cy - self._drag_start[1]
+                if abs(dx) > 3 or abs(dy) > 3:
+                    self._drag_has_moved = True
+                self._window_pos = (
+                    self._window_pos[0] + dx,
+                    self._window_pos[1] + dy,
+                )
+                self._drag_start = (cx, cy)
+                win32gui.SetWindowPos(
+                    hwnd, 0,
+                    self._window_pos[0], self._window_pos[1],
+                    0, 0,
+                    win32con.SWP_NOSIZE | win32con.SWP_NOZORDER,
+                )
+            else:
+                self._update_eye_direction(x, y)
+            return 0
 
-            if msg == win32con.WM_LBUTTONDOWN:
-                x = win32api.LOWORD(lparam)
-                y = win32api.HIWORD(lparam)
-                self._dragging = True
-                self._drag_has_moved = False
-                self._drag_start = win32api.GetCursorPos()
-                self._drag_click_pos = (x, y)
-                self._drag_start_time = time.monotonic()
-                return 0
+        if msg == win32con.WM_LBUTTONDOWN:
+            x = win32api.LOWORD(lparam)
+            y = win32api.HIWORD(lparam)
+            self._dragging = True
+            self._drag_has_moved = False
+            self._drag_start = win32api.GetCursorPos()
+            self._drag_click_pos = (x, y)
+            self._drag_start_time = time.monotonic()
+            return 0
 
-            if msg == win32con.WM_LBUTTONUP:
-                x = win32api.LOWORD(lparam)
-                y = win32api.HIWORD(lparam)
-                self._dragging = False
-                press_duration = time.monotonic() - self._drag_start_time
-                is_click = (not self._drag_has_moved) and (press_duration < 0.2)
-                if is_click and self._drag_click_pos:
-                    zone = self._click_zone.detect(x, y, *self._size)
-                    if zone:
+        if msg == win32con.WM_LBUTTONUP:
+            x = win32api.LOWORD(lparam)
+            y = win32api.HIWORD(lparam)
+            self._dragging = False
+            press_duration = time.monotonic() - self._drag_start_time
+            is_click = (not self._drag_has_moved) and (press_duration < 0.2)
+            if is_click and self._drag_click_pos:
+                zone = self._click_zone.detect(x, y, *self._size)
+                if zone:
+                    try:
                         self._handle_click(zone)
-                self._drag_has_moved = False
-                return 0
+                    except Exception as e:
+                        print(f"[PET] Click error: {e}")
+            self._drag_has_moved = False
+            return 0
 
-            if msg == win32con.WM_MBUTTONDOWN:
-                self._switch_back_to_terminal()
-                return 0
+        if msg == win32con.WM_MBUTTONDOWN:
+            self._switch_back_to_terminal()
+            return 0
 
-            if msg == win32con.WM_RBUTTONUP:
-                self._show_context_menu()
-                return 0
+        if msg == win32con.WM_RBUTTONUP:
+            self._show_context_menu()
+            return 0
 
-            if msg == win32con.WM_TIMER:
-                self._update_animation()
-                return 0
+        if msg == win32con.WM_TIMER:
+            self._update_animation()
+            return 0
 
-            if msg == win32con.WM_DESTROY:
-                self._running = False
-                win32gui.KillTimer(hwnd, 1)
-                win32gui.PostQuitMessage(0)
-                return 0
-        except Exception as e:
-            self._log_error(f"WndProc error: {e}")
+        if msg == win32con.WM_DESTROY:
+            self._running = False
+            win32gui.KillTimer(hwnd, 1)
+            win32gui.PostQuitMessage(0)
             return 0
 
         return win32gui.DefWindowProc(hwnd, msg, wparam, lparam)
@@ -465,20 +450,12 @@ class PetWindow:
     # ── Click handling ────────────────────────────────────────────────────
 
     def _handle_click(self, zone: str) -> None:
-        print(f"[PET] Click zone: {zone}")
-        try:
-            if zone in ("top", "bottom") and win32gui:
-                rect = win32gui.GetWindowRect(self._hwnd)
-                panel = "mode" if zone == "top" else "chat"
-                print(f"[PET] Showing panel: {panel}")
-                self._bubble.show(rect, panel=panel)
-            elif self._on_action:
-                print(f"[PET] Calling on_action('{zone}')")
-                self._on_action(zone)
-                print(f"[PET] on_action('{zone}') done")
-        except Exception as e:
-            print(f"[PET] Handle click error: {e}")
-            self._log_error(f"Handle click error: {e}")
+        if zone in ("top", "bottom") and win32gui:
+            rect = win32gui.GetWindowRect(self._hwnd)
+            panel = "mode" if zone == "top" else "chat"
+            self._bubble.show(rect, panel=panel)
+        elif self._on_action:
+            self._on_action(zone)
 
     def _log_error(self, message: str) -> None:
         """Log error to file for debugging."""
@@ -503,7 +480,6 @@ class PetWindow:
     # ── Context menu ──────────────────────────────────────────────────────
 
     def _show_context_menu(self) -> None:
-        print("[PET] Showing context menu")
         try:
             menu = win32gui.CreatePopupMenu()
             win32gui.AppendMenu(menu, win32con.MF_STRING, 1, "Hide")
@@ -520,7 +496,6 @@ class PetWindow:
                 self._hwnd,
                 None,
             )
-            print(f"[PET] Menu command: {cmd}")
             if cmd == 1:
                 win32gui.ShowWindow(self._hwnd, win32con.SW_HIDE)
             elif cmd == 2:
@@ -533,13 +508,11 @@ class PetWindow:
 
     def _switch_back_to_terminal(self) -> None:
         """Close pet and launch terminal."""
-        print("[PET] Switching back to terminal (middle-click or menu)")
         self._save_position()
         self._launch_terminal()
         self.close()
 
     def _launch_terminal(self) -> None:
-        print(f"[PET] Launching terminal: {sys.executable} -m holle_music")
         subprocess.Popen(
             [sys.executable, "-m", "holle_music"],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
