@@ -51,7 +51,6 @@ def main() -> None:
 
     window = PetWindow(on_action=on_action)
     window._on_player_state_check = lambda: player.is_playing
-    window.set_chat_submit_callback(on_chat_send)
 
     # AI chat handling
     def on_chat_send(text: str) -> None:
@@ -78,6 +77,8 @@ def main() -> None:
 
         import threading
         threading.Thread(target=ai_worker, daemon=True).start()
+
+    window.set_chat_submit_callback(on_chat_send)
 
     print("Holle Pet started!")
     print("Click: center=play/pause | left/right=prev/next | top=mode | bottom=chat")
