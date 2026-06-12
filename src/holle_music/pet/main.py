@@ -63,6 +63,10 @@ def main() -> None:
             player.next_track()
         elif zone == "top":
             player.cycle_mode()
+        elif zone == "volume_up":
+            player.volume_up()
+        elif zone == "volume_down":
+            player.volume_down()
         elif zone.startswith("set_mode:"):
             target_mode = zone[9:]
             current = player.mode

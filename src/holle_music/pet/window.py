@@ -268,6 +268,14 @@ class PetWindow:
             self._switch_back_to_terminal()
             return 0
 
+        if msg == win32con.WM_MOUSEWHEEL:
+            delta = win32api.HIWORD(wparam)
+            if delta > 0:
+                self._on_action("volume_up") if self._on_action else None
+            else:
+                self._on_action("volume_down") if self._on_action else None
+            return 0
+
         if msg == win32con.WM_RBUTTONUP:
             self._show_context_menu()
             return 0

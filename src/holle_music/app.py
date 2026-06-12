@@ -424,6 +424,14 @@ class HolleMusicApp(App):
                 self._sync_playlist_selection()
             elif cmd == "mode":
                 self._cycle_play_mode()
+            elif cmd == "volume_up":
+                new_vol = min(1.0, self.player.volume + 0.1)
+                self.player.set_volume(new_vol)
+                self.query_one("#visualizer", Visualizer).volume_bar.set_volume(new_vol)
+            elif cmd == "volume_down":
+                new_vol = max(0.0, self.player.volume - 0.1)
+                self.player.set_volume(new_vol)
+                self.query_one("#visualizer", Visualizer).volume_bar.set_volume(new_vol)
             elif cmd.startswith("play:"):
                 title = cmd[5:]
                 self._play_by_title(title)

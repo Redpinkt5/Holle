@@ -81,6 +81,22 @@ class PetPlayer:
         if not self._is_main_app_running() and self._standalone_player is not None:
             self._standalone_player.set_volume(volume)
 
+    def volume_up(self) -> None:
+        """Increase volume by 10%."""
+        if self._is_main_app_running():
+            self._send_cmd("volume_up")
+        elif self._standalone_player is not None:
+            new_vol = min(1.0, self._standalone_player.volume + 0.1)
+            self._standalone_player.set_volume(new_vol)
+
+    def volume_down(self) -> None:
+        """Decrease volume by 10%."""
+        if self._is_main_app_running():
+            self._send_cmd("volume_down")
+        elif self._standalone_player is not None:
+            new_vol = max(0.0, self._standalone_player.volume - 0.1)
+            self._standalone_player.set_volume(new_vol)
+
     def cycle_mode(self) -> None:
         if self._is_main_app_running():
             self._send_cmd("mode")
