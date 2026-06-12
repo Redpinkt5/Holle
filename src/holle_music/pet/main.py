@@ -63,6 +63,15 @@ def main() -> None:
             player.next_track()
         elif zone == "top":
             player.cycle_mode()
+        elif zone.startswith("set_mode:"):
+            target_mode = zone[9:]
+            current = player.mode
+            modes = ["sequential", "random", "repeat"]
+            cur_idx = modes.index(current) if current in modes else 0
+            target_idx = modes.index(target_mode) if target_mode in modes else 0
+            steps = (target_idx - cur_idx) % len(modes)
+            for _ in range(steps):
+                player.cycle_mode()
         elif zone == "bottom":
             # Chat bubble is handled by BubbleManager in window.py
             pass

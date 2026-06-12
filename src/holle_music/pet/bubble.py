@@ -51,12 +51,14 @@ class BubbleManager:
     def show(self, pet_rect: tuple[int, int, int, int], panel: str = "chat") -> None:
         """Show the unified window near the pet."""
         if self._tk_root is None:
+            print("[BUBBLE] Cannot show: tk_root is None")
             return
 
         try:
             self.hide()
 
             x, y = self._calc_position(pet_rect)
+            print(f"[BUBBLE] Creating window at {x},{y} panel={panel}")
 
             self._window = tk.Toplevel(self._tk_root)
             self._window.overrideredirect(True)
@@ -64,6 +66,8 @@ class BubbleManager:
             self._window.geometry(f"{WIDTH}x{HEIGHT}+{x}+{y}")
             self._window.configure(bg=BG_COLOR)
             self._window.bind("<Escape>", lambda _e: self.hide())
+            self._window.deiconify()
+            self._window.lift()
 
             self._build_title_bar()
             self._panel_frame = tk.Frame(self._window, bg=BG_COLOR)
@@ -75,8 +79,22 @@ class BubbleManager:
                 self._build_chat_panel()
 
             self._make_draggable()
+            self._window.update_idletasks()
+            self._window.update()
+            print("[BUBBLE] Window shown")
         except Exception as e:
             print(f"[BUBBLE] Show error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def update(self) -> None:
+        """Process pending tkinter events — called from Win32 message loop."""
+        if self._tk_root is not None:
+            try:
+                self._tk_root.update_idletasks()
+                self._tk_root.update()
+            except Exception:
+                pass
 
     def hide(self) -> None:
         """Hide the window."""
@@ -182,17 +200,7 @@ class BubbleManager:
         def apply():
             mode = self._mode_var.get() if self._mode_var else "sequential"
             if self._on_action:
-                # Cycle until reaching the selected mode
-                from holle_music.pet.player_proxy import PetPlayer
-                current = "sequential"  # default; we don't track exact mode here
-                modes_list = ["sequential", "random", "repeat"]
-                if hasattr(PetPlayer, '_MODES'):
-                    modes_list = PetPlayer._MODES
-                cur_idx = modes_list.index(current) if current in modes_list else 0
-                target_idx = modes_list.index(mode) if mode in modes_list else 0
-                steps = (target_idx - cur_idx) % len(modes_list)
-                for _ in range(steps):
-                    self._on_action("top")
+                self._on_action(f"set_mode:{mode}")
             self.hide()
 
         tk.Button(

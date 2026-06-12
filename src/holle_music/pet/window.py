@@ -134,6 +134,12 @@ class PetWindow:
                 except Exception:
                     pass
 
+            # Process tkinter events for bubble panel
+            try:
+                self._bubble.update()
+            except Exception:
+                pass
+
             try:
                 self._update_animation()
             except Exception as e:
