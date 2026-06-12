@@ -161,6 +161,15 @@ class BubbleManager:
         if time.monotonic() - self._shown_at > self._auto_hide_delay:
             self.hide()
 
+    def update_tk(self) -> None:
+        """Process pending tkinter events for chat input."""
+        if self._tk_root is not None:
+            try:
+                self._tk_root.update_idletasks()
+                self._tk_root.update()
+            except Exception:
+                pass
+
     def on_click(self, x: int, y: int) -> bool:
         """Handle click inside the bubble window.  Return True if handled."""
         if self._mode == "mode":
@@ -354,6 +363,7 @@ class BubbleManager:
             self._tk_top.overrideredirect(True)
             self._tk_top.geometry(f"{w - 16}x{entry_h}+{x + 8}+{entry_y}")
             self._tk_top.attributes("-topmost", True)
+            self._tk_top.lift()
             self._tk_top.deiconify()
 
             self._entry = tk.Entry(
@@ -368,7 +378,11 @@ class BubbleManager:
             )
             self._entry.pack(fill="both", expand=True)
             self._entry.bind("<Return>", lambda _e: self._on_entry_send())
-            self._entry.focus_set()
+            self._entry.focus_force()
+
+            # Process tk events so the widget appears immediately
+            self._tk_root.update_idletasks()
+            self._tk_root.update()
         except Exception as e:
             self._log_error(f"_embed_entry error: {e}")
 
@@ -450,13 +464,43 @@ def _calc_position(
     pet_rect: tuple[int, int, int, int],
     above: bool = True,
 ) -> tuple[int, int]:
-    """Calculate bubble position centered above (or below) the pet."""
+    """Calculate bubble position above/below pet, keeping inside screen bounds."""
     px, py, px2, py2 = pet_rect
     cx = (px + px2) // 2
+
+    # Get screen dimensions
+    try:
+        screen_w = win32api.GetSystemMetrics(0)
+        screen_h = win32api.GetSystemMetrics(1)
+    except Exception:
+        screen_w, screen_h = 1920, 1080
+
+    # Default: centered above pet
     x = cx - w // 2
     y = py - h - 5 if above else py2 + 5
-    if y < 0:  # Off-screen top, flip to below
+
+    # If going above puts it off-screen top, flip below
+    if y < 0:
         y = py2 + 5
+
+    # Keep horizontal inside screen bounds
+    if x < 5:
+        x = 5
+    elif x + w > screen_w - 5:
+        x = screen_w - w - 5
+
+    # If pet is near left edge, prefer bubble to the right of pet
+    if px < w + 20:
+        x = px2 + 10
+        # But keep inside right edge
+        if x + w > screen_w - 5:
+            x = screen_w - w - 5
+    # If pet is near right edge, prefer bubble to the left of pet
+    elif px2 > screen_w - w - 20:
+        x = px - w - 10
+        if x < 5:
+            x = 5
+
     return x, y
 
 

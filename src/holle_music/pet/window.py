@@ -134,6 +134,12 @@ class PetWindow:
                 except Exception:
                     pass
 
+            # Update chat bubble tkinter input
+            try:
+                self._bubble.update_tk()
+            except Exception:
+                pass
+
             try:
                 self._update_animation()
                 self._bubble.check_auto_hide()
