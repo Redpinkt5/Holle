@@ -8,8 +8,6 @@ from typing import Callable
 BG = "#151515"
 ACCENT = "#ff69b4"
 FG = "white"
-CIRCLE_R = 28
-CIRCLE_GAP = 14
 
 
 class BubbleManager:
@@ -98,53 +96,48 @@ class BubbleManager:
         self._ensure_root()
 
         if self._mode_win is not None:
-            try:
-                self._mode_win.destroy()
-            except Exception:
-                pass
+            try: self._mode_win.destroy()
+            except Exception: pass
 
         x, y = _pos_mode(pet_rect)
-        w = CIRCLE_R * 6 + CIRCLE_GAP * 2 + 20
-        h = CIRCLE_R * 2 + 40
+        sq = 44   # square size
+        gap = 10
+        pad = 8
+        w = sq * 3 + gap * 2 + pad * 2
+        h = sq + pad * 2
 
         self._mode_win = tk.Toplevel(self._root)
         self._mode_win.overrideredirect(True)
         self._mode_win.attributes("-topmost", True)
         self._mode_win.geometry(f"{w}x{h}+{x}+{y}")
-        self._mode_win.configure(bg="")  # transparent-ish
+        self._mode_win.configure(bg="gray1")
         self._mode_win.attributes("-transparentcolor", "gray1")
-        # We use a solid bg and draw circles on canvas
 
         canvas = tk.Canvas(self._mode_win, width=w, height=h,
                            bg="gray1", highlightthickness=0, bd=0)
         canvas.pack()
 
         modes = [
-            ("sequential", "⭢", "顺序"),
-            ("random", "↬", "随机"),
-            ("repeat", "⟳", "循环"),
+            ("sequential", "⭢"),
+            ("random", "↬"),
+            ("repeat", "⟳"),
         ]
-        item_data: list[tuple[int, str]] = []  # (item_id, mode_value)
+        item_data: list[tuple[int, str]] = []
+        name_map = {"sequential": "顺序播放", "random": "随机播放", "repeat": "单曲循环"}
 
-        for i, (mode, symbol, label) in enumerate(modes):
-            cx = 10 + CIRCLE_R + i * (CIRCLE_R * 2 + CIRCLE_GAP)
-            cy = h // 2 - 6
+        for i, (mode, symbol) in enumerate(modes):
+            lx = pad + i * (sq + gap)
+            ty = pad
+            rx = lx + sq
+            by = ty + sq
+            cx = lx + sq // 2
+            cy = ty + sq // 2
 
-            # Circle
-            item = canvas.create_oval(
-                cx - CIRCLE_R, cy - CIRCLE_R,
-                cx + CIRCLE_R, cy + CIRCLE_R,
-                fill="#2a2a2a", outline=ACCENT, width=2,
-            )
+            item = canvas.create_rectangle(lx, ty, rx, by,
+                                           fill="white", outline="", width=0)
             item_data.append((item, mode))
-
-            # Symbol
-            canvas.create_text(cx, cy - 4, text=symbol, fill=FG,
+            canvas.create_text(cx, cy, text=symbol, fill="#151515",
                                font=("Segoe UI", 18, "bold"))
-
-            # Label
-            canvas.create_text(cx, cy + CIRCLE_R + 12, text=label, fill="#aaaaaa",
-                               font=("Segoe UI", 9))
 
         def on_click(event):
             for item_id, mode_val in item_data:
@@ -154,20 +147,10 @@ class BubbleManager:
                         self._on_action(f"set_mode:{mode_val}")
                     self._mode_win.destroy()
                     self._mode_win = None
+                    self.queue_response(f"{name_map[mode_val]}模式已开启")
                     return
 
         canvas.bind("<Button-1>", on_click)
-
-        # Hover highlight
-        def on_motion(event):
-            for item_id, _ in item_data:
-                overlap = canvas.find_overlapping(event.x, event.y, event.x, event.y)
-                if item_id in overlap:
-                    canvas.itemconfig(item_id, fill="#444444")
-                else:
-                    canvas.itemconfig(item_id, fill="#2a2a2a")
-
-        canvas.bind("<Motion>", on_motion)
 
         def _auto_hide():
             if self._mode_win:
