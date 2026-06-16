@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 from PIL import Image, ImageDraw, ImageFont
 
-from holle_music.widgets import _SHIMMER_PALETTES, get_shimmer_palette
+from holle_music.shared import _SHIMMER_PALETTES, get_shimmer_palette
 
 
 # ── Visual constants ──────────────────────────────────────────────────────────

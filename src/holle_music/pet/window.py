@@ -27,8 +27,13 @@ from holle_music.pet.bubble import BubbleManager
 from holle_music.pet.bubble_renderer import BubbleRenderer
 from holle_music.pet.click_zone import ClickZone
 from holle_music.pet.renderer import MascotRenderer, CELL_W, CELL_H, PADDING
-from holle_music.widgets import Mascot as MascotWidget
-from holle_music.widgets import _SHIMMER_INTERVAL, _SHIMMER_PALETTES, get_shimmer_palette
+from holle_music.shared import (
+    _SHIMMER_INTERVAL,
+    _SHIMMER_PALETTES,
+    get_shimmer_palette,
+    _MASCOT_COLS,
+    _MASCOT_ROWS,
+)
 
 
 class PetWindow:
@@ -284,8 +289,8 @@ class PetWindow:
     # ── Window creation ───────────────────────────────────────────────────
 
     def _calc_size(self) -> tuple[int, int]:
-        width = MascotWidget.COLS * CELL_W + PADDING * 2
-        height = MascotWidget.ROWS * CELL_H + PADDING * 2
+        width = _MASCOT_COLS * CELL_W + PADDING * 2
+        height = _MASCOT_ROWS * CELL_H + PADDING * 2
         return width, height
 
     def _create_window(self) -> int:

@@ -10,7 +10,7 @@ from holle_music.pet.ark_api import ArkService
 from holle_music.pet.player_proxy import PetPlayer
 from holle_music.pet.window import PetWindow
 from holle_music.settings import load_settings, set_setting
-from holle_music.widgets import set_shimmer_palette
+from holle_music.shared import set_shimmer_palette
 
 
 def main() -> None:

@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw, ImageColor
 
-from holle_music.widgets import Mascot, _SHIMMER_PALETTES, _SHIMMER_INTERVAL, _current_palette
+from holle_music.shared import (
+    _SHIMMER_PALETTES,
+    _SHIMMER_INTERVAL,
+    _current_palette,
+    _MASCOT_COLS,
+    _MASCOT_ROWS,
+    _MASCOT_BODY,
+    _MASCOT_EYES,
+)
 
 
 CELL_W: int = 10   # terminal char width
@@ -29,7 +37,7 @@ class MascotRenderer:
         """Generate RGBA mascot image.
 
         Args:
-            direction: Eye direction (must be a key in ``Mascot._EYES``).
+            direction: Eye direction (must be a key in ``_MASCOT_EYES``).
             active: Whether the mascot is in active/shimmer state.
             palette_name: Name of the shimmer palette theme.
             shimmer_idx: Index into the palette for the current color.
@@ -38,8 +46,8 @@ class MascotRenderer:
         Returns:
             A Pillow ``Image`` in RGBA mode with a transparent background.
         """
-        width = Mascot.COLS * CELL_W + PADDING * 2
-        height = Mascot.ROWS * CELL_H + PADDING * 2
+        width = _MASCOT_COLS * CELL_W + PADDING * 2
+        height = _MASCOT_ROWS * CELL_H + PADDING * 2
         img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
@@ -63,10 +71,10 @@ class MascotRenderer:
         This rect (left, top, right, bottom) is relative to the image top-left
         and can be used to place UI elements flush against the actual graphics.
         """
-        min_col = min((row_str.find("█") for row_str in Mascot._BODY if "█" in row_str), default=0)
-        max_col = max((row_str.rfind("█") for row_str in Mascot._BODY if "█" in row_str), default=0)
-        min_row = next((i for i, row in enumerate(Mascot._BODY) if "█" in row), 0)
-        max_row = len(Mascot._BODY) - next((i for i, row in enumerate(reversed(Mascot._BODY)) if "█" in row), 0) - 1
+        min_col = min((row_str.find("█") for row_str in _MASCOT_BODY if "█" in row_str), default=0)
+        max_col = max((row_str.rfind("█") for row_str in _MASCOT_BODY if "█" in row_str), default=0)
+        min_row = next((i for i, row in enumerate(_MASCOT_BODY) if "█" in row), 0)
+        max_row = len(_MASCOT_BODY) - next((i for i, row in enumerate(reversed(_MASCOT_BODY)) if "█" in row), 0) - 1
 
         left = PADDING + min_col * CELL_W
         top = PADDING + min_row * CELL_H
@@ -89,13 +97,13 @@ class MascotRenderer:
         volume 0.25 -> lower half shimmers,
         volume 0.0 -> no shimmer (all body_base color).
         """
-        total_rows = len(Mascot._BODY)
+        total_rows = len(_MASCOT_BODY)
         # Map volume so that 30% is full shimmer, below 30% scales linearly.
         scaled = min(1.0, volume / 0.3)
         # Determine the first row that should use the shimmer color.
         shimmer_start_row = int(total_rows * (1.0 - max(0.0, min(1.0, scaled))))
 
-        for row_idx, row_str in enumerate(Mascot._BODY):
+        for row_idx, row_str in enumerate(_MASCOT_BODY):
             if active and row_idx >= shimmer_start_row:
                 body_color = color
             else:
@@ -110,7 +118,7 @@ class MascotRenderer:
 
     def _draw_eyes(self, draw: ImageDraw.Draw, direction: str, main_color: str = "light") -> None:
         """Draw eyes at position for given direction."""
-        (left_row, left_col), (right_row, right_col) = Mascot._EYES[direction]
+        (left_row, left_col), (right_row, right_col) = _MASCOT_EYES[direction]
         eye_color = "#ffffff" if main_color == "dark" else "#000000"
         for row, col in ((left_row, left_col), (right_row, right_col)):
             x0 = PADDING + col * CELL_W

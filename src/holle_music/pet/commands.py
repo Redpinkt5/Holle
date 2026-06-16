@@ -7,7 +7,7 @@ from typing import Any
 
 from holle_music.scanner import Scanner
 from holle_music.settings import set_setting
-from holle_music.widgets import set_shimmer_palette
+from holle_music.shared import set_shimmer_palette
 
 
 class PetCommandHandler:
@@ -206,7 +206,7 @@ class PetCommandHandler:
 
     @staticmethod
     def _valid_colors() -> list[str]:
-        from holle_music.widgets import _SHIMMER_PALETTES
+        from holle_music.shared import _SHIMMER_PALETTES
         return list(_SHIMMER_PALETTES.keys())
 
     def _cmd_maincolor(self, arg: str) -> str:
