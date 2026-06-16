@@ -1,17 +1,38 @@
 #!/usr/bin/env python3
 """Build standalone executables with PyInstaller.
 
-Creates two separate EXEs:
-    HolleMusic.exe  — Full terminal TUI app (player + assistant)
-    HollePet.exe    — Desktop music assistant only (lightweight, no Textual)
+Cross-platform build script. Run locally or in CI:
+
+    python scripts/build-exe.py
+    python scripts/build-exe.py --targets hollemusic
+    python scripts/build-exe.py --targets hollemusic,hollepet --platform windows
+
+Output files (in ``dist/``):
+    - hollemusic[.exe]   — terminal TUI app (all platforms)
+    - hollepet[.exe]     — desktop music assistant (Windows only)
 """
 
+from __future__ import annotations
+
+import argparse
 import subprocess
 import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 SRC_DIR = PROJECT_ROOT / "src"
+DIST_DIR = PROJECT_ROOT / "dist"
+BUILD_DIR = PROJECT_ROOT / "build"
+
+
+def _platform_separator() -> str:
+    """PyInstaller --add-data separator: ';' on Windows, ':' elsewhere."""
+    return ";" if sys.platform == "win32" else ":"
+
+
+def _exe_suffix() -> str:
+    """Return '.exe' on Windows, empty otherwise."""
+    return ".exe" if sys.platform == "win32" else ""
 
 
 def _ensure_pyinstaller() -> None:
@@ -19,29 +40,43 @@ def _ensure_pyinstaller() -> None:
         import PyInstaller.__main__  # noqa: F401
     except ImportError:
         print("Installing PyInstaller...")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "pyinstaller", "-q"]
-        )
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller", "-q"])
 
 
-def build_terminal() -> None:
-    """Build the full terminal TUI app (includes the desktop assistant)."""
+def _common_excludes() -> list[str]:
+    """Exclude heavy/unused packages that bloat the executable."""
+    return [
+        "--exclude-module", "PyQt5",
+        "--exclude-module", "PySide6",
+        "--exclude-module", "torch",
+        "--exclude-module", "IPython",
+        "--exclude-module", "jupyter",
+        "--exclude-module", "matplotlib",
+        "--exclude-module", "tkinter",
+    ]
+
+
+def build_terminal() -> Path:
+    """Build hollemusic — the full terminal TUI app."""
     print("\n" + "=" * 60)
-    print("Building HolleMusic.exe (full terminal TUI app)...")
+    print("Building hollemusic (terminal TUI app)...")
     print("=" * 60)
 
     sys.path.insert(0, str(SRC_DIR))
-
     import PyInstaller.__main__
+
+    sep = _platform_separator()
+    suffix = _exe_suffix()
+    output_name = f"hollemusic{suffix}"
 
     args = [
         str(SRC_DIR / "holle_music" / "app.py"),
-        "--name", "HolleMusic",
+        "--name", "hollemusic",
         "--onefile",
         "--console",
         "--noconfirm",
         "--clean",
-        "--add-data", f"{SRC_DIR / 'holle_music'};holle_music",
+        "--add-data", f"{SRC_DIR / 'holle_music'}{sep}holle_music",
         "--hidden-import", "textual",
         "--hidden-import", "textual.widgets",
         "--hidden-import", "textual.containers",
@@ -59,45 +94,57 @@ def build_terminal() -> None:
         "--hidden-import", "numpy",
         "--hidden-import", "numpy.fft",
         "--hidden-import", "librosa",
-        "--hidden-import", "win32api",
-        "--hidden-import", "win32con",
-        "--hidden-import", "win32gui",
-        "--hidden-import", "win32ui",
-        "--exclude-module", "PyQt5",
-        "--exclude-module", "PySide6",
-        "--exclude-module", "torch",
+        *_common_excludes(),
         "--collect-all", "textual",
         "--collect-all", "pygame",
-        "--distpath", str(PROJECT_ROOT / "dist"),
-        "--workpath", str(PROJECT_ROOT / "build"),
-        "--specpath", str(PROJECT_ROOT / "build"),
+        "--distpath", str(DIST_DIR),
+        "--workpath", str(BUILD_DIR),
+        "--specpath", str(BUILD_DIR),
     ]
+
+    if sys.platform == "win32":
+        args.extend([
+            "--hidden-import", "win32api",
+            "--hidden-import", "win32con",
+            "--hidden-import", "win32gui",
+            "--hidden-import", "win32ui",
+        ])
 
     PyInstaller.__main__.run(args)
 
-    exe = PROJECT_ROOT / "dist" / "HolleMusic.exe"
+    exe = DIST_DIR / output_name
     if exe.exists():
-        print(f"\n✅ HolleMusic.exe: {exe}")
+        size_mb = exe.stat().st_size / (1024 * 1024)
+        print(f"\n✅ hollemusic{suffix}: {exe} ({size_mb:.1f} MB)")
     else:
-        print(f"\n⚠️ Build completed but HolleMusic.exe not found.")
+        print(f"\n⚠️ Build completed but hollemusic{suffix} not found.")
+    return exe
 
 
-def build_pet() -> None:
-    """Build the desktop music assistant only (no Textual dependency)."""
+def build_pet() -> Path | None:
+    """Build hollepet — the desktop music assistant (Windows only)."""
+    if sys.platform != "win32":
+        print("\n[SKIP] hollepet is Windows-only (requires pywin32 / Win32 API)")
+        return None
+
     print("\n" + "=" * 60)
-    print("Building HollePet.exe (desktop music assistant)...")
+    print("Building hollepet (desktop music assistant)...")
     print("=" * 60)
 
     import PyInstaller.__main__
 
+    sep = _platform_separator()
+    suffix = _exe_suffix()
+    output_name = f"hollepet{suffix}"
+
     args = [
         str(SRC_DIR / "holle_music" / "pet" / "main.py"),
-        "--name", "HollePet",
+        "--name", "hollepet",
         "--onefile",
         "--console",
         "--noconfirm",
         "--clean",
-        "--add-data", f"{SRC_DIR / 'holle_music'};holle_music",
+        "--add-data", f"{SRC_DIR / 'holle_music'}{sep}holle_music",
         "--hidden-import", "PIL",
         "--hidden-import", "PIL.Image",
         "--hidden-import", "PIL.ImageDraw",
@@ -111,45 +158,64 @@ def build_pet() -> None:
         "--hidden-import", "win32con",
         "--hidden-import", "win32gui",
         "--hidden-import", "win32ui",
-        # Textual is NOT included — the pet uses its own PIL-based renderer
-        # librosa, numpy, ddgs are NOT included (not needed by the pet)
         "--exclude-module", "textual",
         "--exclude-module", "librosa",
         "--exclude-module", "numpy",
         "--exclude-module", "ddgs",
-        "--exclude-module", "PyQt5",
-        "--exclude-module", "PySide6",
-        "--exclude-module", "torch",
-        "--distpath", str(PROJECT_ROOT / "dist"),
-        "--workpath", str(PROJECT_ROOT / "build"),
-        "--specpath", str(PROJECT_ROOT / "build"),
+        *_common_excludes(),
+        "--distpath", str(DIST_DIR),
+        "--workpath", str(BUILD_DIR),
+        "--specpath", str(BUILD_DIR),
     ]
 
     PyInstaller.__main__.run(args)
 
-    exe = PROJECT_ROOT / "dist" / "HollePet.exe"
+    exe = DIST_DIR / output_name
     if exe.exists():
-        print(f"\n✅ HollePet.exe: {exe}")
+        size_mb = exe.stat().st_size / (1024 * 1024)
+        print(f"\n✅ hollepet{suffix}: {exe} ({size_mb:.1f} MB)")
     else:
-        print(f"\n⚠️ Build completed but HollePet.exe not found.")
+        print(f"\n⚠️ Build completed but hollepet{suffix} not found.")
+    return exe
 
 
 def main() -> None:
-    _ensure_pyinstaller()
+    parser = argparse.ArgumentParser(description="Build Holle Music executables")
+    parser.add_argument(
+        "--targets",
+        default="hollemusic,hollepet",
+        help="Comma-separated targets: hollemusic,hollepet",
+    )
+    parser.add_argument(
+        "--platform",
+        default="",
+        help="Platform name (windows, linux, macos) for logging",
+    )
+    args = parser.parse_args()
 
-    build_terminal()
-    build_pet()
+    _ensure_pyinstaller()
+    sys.path.insert(0, str(SRC_DIR))
+
+    targets = {t.strip() for t in args.targets.split(",")}
+    platform_label = f" [{args.platform}]" if args.platform else ""
+    print(f"Building targets: {targets}{platform_label}")
+
+    built: list[Path] = []
+    if "hollemusic" in targets:
+        built.append(build_terminal())
+    if "hollepet" in targets:
+        pet = build_pet()
+        if pet:
+            built.append(pet)
 
     print("\n" + "=" * 60)
     print("Build complete!")
-    print("Distributable EXEs:")
-    for name in ["HolleMusic.exe", "HollePet.exe"]:
-        p = PROJECT_ROOT / "dist" / name
+    for p in built:
         if p.exists():
             size_mb = p.stat().st_size / (1024 * 1024)
-            print(f"  ✅ {name}  ({size_mb:.1f} MB)")
+            print(f"  ✅ {p.name}  ({size_mb:.1f} MB)")
         else:
-            print(f"  ⚠️ {name}  (not found)")
+            print(f"  ⚠️ {p.name}  (not found)")
     print("=" * 60)
 
 

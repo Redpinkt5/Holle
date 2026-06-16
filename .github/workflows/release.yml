@@ -9,8 +9,26 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run pytest
+        run: pytest -v
+
   pypi:
     name: Publish to PyPI
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,10 +50,23 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload dist/*
 
-  exe-windows:
-    name: Build Windows EXE
-    runs-on: windows-latest
-    needs: pypi
+  build-binaries:
+    name: Build ${{ matrix.name }} binaries
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            targets: hollemusic,hollepet
+          - os: ubuntu-latest
+            name: linux
+            targets: hollemusic
+          - os: macos-latest
+            name: macos
+            targets: hollemusic
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,16 +76,55 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
+        shell: bash
         run: |
           pip install -e .
           pip install pyinstaller
 
-      - name: Build EXE
-        run: python scripts/build-exe.py
+      - name: Build binaries
+        shell: bash
+        run: python scripts/build-exe.py --targets ${{ matrix.targets }} --platform ${{ matrix.name }}
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          mkdir -p release
+          case "${{ matrix.name }}" in
+            windows)
+              zip -j "release/hollemusic-${VERSION}-windows.zip" dist/hollemusic.exe
+              zip -j "release/hollepet-${VERSION}-windows.zip" dist/hollepet.exe
+              ;;
+            linux)
+              chmod +x dist/hollemusic
+              tar -czf "release/hollemusic-${VERSION}-linux.tar.gz" -C dist hollemusic
+              ;;
+            macos)
+              chmod +x dist/hollemusic
+              tar -czf "release/hollemusic-${VERSION}-macos.tar.gz" -C dist hollemusic
+              ;;
+          esac
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}-release
+          path: release/*
+
+  release:
+    name: Upload to GitHub Release
+    needs: [pypi, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Holle.exe
+          files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
