@@ -797,7 +797,7 @@ class HolleMusicApp(App):
                 **kwargs,
             )
         except Exception as e:
-            self._notify_chat(f"桌宠启动失败: {e}")
+            self._notify_chat(f"桌面音乐助手启动失败: {e}")
             return
 
         # Minimize/hide the terminal window instead of exiting so playback
@@ -812,7 +812,7 @@ class HolleMusicApp(App):
         except Exception:
             pass
 
-        self._notify_chat(" ◆ 桌宠已启动，终端已最小化")
+        self._notify_chat(" ◆ 桌面音乐助手已启动，终端已最小化")
 
     def on_mouse_move(self, event) -> None:
         self.query_one("#controls", Controls).update_mouse(

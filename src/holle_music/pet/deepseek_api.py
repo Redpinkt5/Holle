@@ -14,7 +14,7 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"
 
 # ── System prompt ──────────────────────────────────────────────────────
-PET_SYSTEM_PROMPT = """你是 Holle Music 的桌面宠物 AI 助手，既能控制音乐播放器，也能陪用户聊天、回答实时性问题。
+PET_SYSTEM_PROMPT = """你是 Holle Music 的桌面音乐助手，既能控制音乐播放器，也能陪用户聊天、回答实时性问题。
 
 音乐控制工具：
 - search_local: 本地歌单搜索

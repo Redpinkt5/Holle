@@ -1,4 +1,4 @@
-"""PetPlayer — 桌面宠物播放控制器，支持独立播放或 IPC 代理到主程序."""
+"""PetPlayer — 桌面音乐助手播放控制器，支持独立播放或 IPC 代理到主程序."""
 
 import json
 import time
@@ -10,7 +10,7 @@ from holle_music.settings import set_setting
 
 
 class PetPlayer:
-    """桌面宠物播放器。
+    """桌面音乐助手播放器。
 
     当主程序运行时，通过 IPC 文件（~/.holle_music/pet_state.json 和
     pet_cmd.json）与主程序通信；主程序未运行时，回退到独立播放模式。

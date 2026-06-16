@@ -1,11 +1,11 @@
 # Holle Music
 
-一个终端命令行音乐播放器，界面类似 Claude Code 终端风格。支持播放本地音乐（MP3、FLAC 等）、AI 聊天解歌、实时频谱可视化、随机/顺序/循环播放模式。v0.2.0 新增桌面宠物播放助手。
+一个终端命令行音乐播放器，界面类似 Claude Code 终端风格。支持播放本地音乐（MP3、FLAC 等）、AI 聊天解歌、实时频谱可视化、随机/顺序/循环播放模式。v0.2.0 新增桌面音乐助手。
 
 ## 功能特点
 
 - 🎵 播放本地音乐（MP3、FLAC 等格式）
-- 🐾 **桌面宠物助手**（独立播放器，点击交互，双击查看正在播放）
+- ◆ **桌面音乐助手**（独立播放器，点击交互，双击查看正在播放）
 - 🤖 AI 聊天（支持联网搜索，自动解说歌曲背景）
 - 📊 实时音频频谱可视化
 - 🎨 多种颜色主题（`/color` 命令切换）
@@ -73,9 +73,9 @@ hollemusic
 | `Tab` | 切换焦点 |
 | 鼠标滚轮 | 调节音量 |
 
-### 桌面宠物
+### 桌面音乐助手
 
-点击终端底部 `◆` 按钮启动桌面宠物，或直接运行：
+点击终端底部 `◆` 按钮启动桌面音乐助手，或直接运行：
 
 ```bash
 hollepet
@@ -92,7 +92,7 @@ hollepet
 
 ### 命令列表
 
-终端和桌宠均支持以下命令：
+终端和桌面音乐助手均支持以下命令：
 
 | 命令 | 说明 |
 |------|------|
@@ -102,7 +102,7 @@ hollepet
 | `/prev` | 上一曲 |
 | `/volume <0-100>` | 调节音量 |
 | `/color <颜色>` | 切换主题色（pink / blue / red / green / yellow / purple / orange / gray / brown / black / white / colorful） |
-| `/maincolor <light\|dark>` | 切换桌宠明暗主题 |
+| `/maincolor <light\|dark>` | 切换助手明暗主题 |
 | `/search <关键词>` | 搜索歌曲 |
 | `/scan <路径>` | 扫描文件夹添加到播放列表 |
 | `/help` | 查看帮助 |
@@ -127,7 +127,7 @@ python scripts/build-exe.py
 - [librosa](https://librosa.org/) — 音频频谱分析
 - [Pillow](https://pillow.readthedocs.io/) — 专辑封面处理
 - Ark API / OpenAI API — AI 对话
-- Win32 API — 桌面宠物窗口
+- Win32 API — 桌面音乐助手窗口
 
 ## License
 
