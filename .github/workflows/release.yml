@@ -87,24 +87,35 @@ jobs:
         run: python scripts/build-exe.py --targets ${{ matrix.targets }} --platform ${{ matrix.name }}
 
       - name: Package artifacts
-        shell: bash
+        shell: python
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          mkdir -p release
-          case "${{ matrix.name }}" in
-            windows)
-              zip -j "release/hollemusic-${VERSION}-windows.zip" dist/hollemusic.exe
-              zip -j "release/hollepet-${VERSION}-windows.zip" dist/hollepet.exe
-              ;;
-            linux)
-              chmod +x dist/hollemusic
-              tar -czf "release/hollemusic-${VERSION}-linux.tar.gz" -C dist hollemusic
-              ;;
-            macos)
-              chmod +x dist/hollemusic
-              tar -czf "release/hollemusic-${VERSION}-macos.tar.gz" -C dist hollemusic
-              ;;
-          esac
+          import os
+          import shutil
+          import tarfile
+          import zipfile
+          from pathlib import Path
+
+          version = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          dist_dir = Path("dist")
+          release_dir = Path("release")
+          release_dir.mkdir(exist_ok=True)
+
+          platform = "${{ matrix.name }}"
+          if platform == "windows":
+              for name in ["hollemusic.exe", "hollepet.exe"]:
+                  src = dist_dir / name
+                  if src.exists():
+                      zip_path = release_dir / f"{name[:-4]}-{version}-windows.zip"
+                      with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                          zf.write(src, arcname=name)
+          else:
+              src = dist_dir / "hollemusic"
+              if src.exists():
+                  src.chmod(0o755)
+                  suffix = "linux" if platform == "linux" else "macos"
+                  tar_path = release_dir / f"hollemusic-{version}-{suffix}.tar.gz"
+                  with tarfile.open(tar_path, "w:gz") as tf:
+                      tf.add(src, arcname="hollemusic")
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
