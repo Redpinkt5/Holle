@@ -29,6 +29,7 @@ jobs:
   pypi:
     name: Publish to PyPI
     needs: test
+    if: ${{ !contains(github.ref_name, 'test') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -113,7 +114,7 @@ jobs:
 
   release:
     name: Upload to GitHub Release
-    needs: [pypi, build-binaries]
+    needs: build-binaries
     runs-on: ubuntu-latest
     steps:
       - name: Download packaged artifacts

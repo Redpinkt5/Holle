@@ -115,9 +115,9 @@ def build_terminal() -> Path:
     exe = DIST_DIR / output_name
     if exe.exists():
         size_mb = exe.stat().st_size / (1024 * 1024)
-        print(f"\n✅ hollemusic{suffix}: {exe} ({size_mb:.1f} MB)")
+        print(f"\n[OK] hollemusic{suffix}: {exe} ({size_mb:.1f} MB)")
     else:
-        print(f"\n⚠️ Build completed but hollemusic{suffix} not found.")
+        print(f"\n[WARN] Build completed but hollemusic{suffix} not found.")
     return exe
 
 
@@ -173,9 +173,9 @@ def build_pet() -> Path | None:
     exe = DIST_DIR / output_name
     if exe.exists():
         size_mb = exe.stat().st_size / (1024 * 1024)
-        print(f"\n✅ hollepet{suffix}: {exe} ({size_mb:.1f} MB)")
+        print(f"\n[OK] hollepet{suffix}: {exe} ({size_mb:.1f} MB)")
     else:
-        print(f"\n⚠️ Build completed but hollepet{suffix} not found.")
+        print(f"\n[WARN] Build completed but hollepet{suffix} not found.")
     return exe
 
 
@@ -213,9 +213,9 @@ def main() -> None:
     for p in built:
         if p.exists():
             size_mb = p.stat().st_size / (1024 * 1024)
-            print(f"  ✅ {p.name}  ({size_mb:.1f} MB)")
+            print(f"  [OK] {p.name}  ({size_mb:.1f} MB)")
         else:
-            print(f"  ⚠️ {p.name}  (not found)")
+            print(f"  [WARN] {p.name}  (not found)")
     print("=" * 60)
 
 
