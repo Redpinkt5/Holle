@@ -1,16 +1,19 @@
 # Holle Music
 
-一个终端命令行音乐播放器，界面类似 Claude Code 终端风格。支持播放本地音乐（MP3、FLAC 等）、AI 聊天解歌、实时频谱可视化、随机/顺序/循环播放模式。
+一个终端命令行音乐播放器，界面类似 Claude Code 终端风格。支持播放本地音乐（MP3、FLAC 等）、AI 聊天解歌、实时频谱可视化、随机/顺序/循环播放模式。v0.2.0 新增桌面宠物播放助手。
 
 ## 功能特点
 
 - 🎵 播放本地音乐（MP3、FLAC 等格式）
+- 🐾 **桌面宠物助手**（独立播放器，点击交互，双击查看正在播放）
 - 🤖 AI 聊天（支持联网搜索，自动解说歌曲背景）
 - 📊 实时音频频谱可视化
 - 🎨 多种颜色主题（`/color` 命令切换）
-- 🎚️ 8 段均衡器
-- 🔀 随机 / 顺序 / 单曲循环 播放模式
+- 🌗 深色/浅色主题（`/maincolor light|dark`）
+- 🎚️ 音量随频谱闪烁
+- 🔀 顺序 / 随机 / 单曲循环 播放模式
 - 🖼️ 自动提取并显示专辑封面
+- 💾 播放状态与设置持久化
 
 ## 安装方式
 
@@ -18,7 +21,7 @@
 
 ```bash
 pip install holle-music
-Holle
+hollemusic
 ```
 
 ### 方式二：没有 Python 环境（使用 uv）
@@ -29,14 +32,14 @@ Holle
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 uv tool install holle-music
-Holle
+hollemusic
 ```
 
 **macOS / Linux:**
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv tool install holle-music
-Holle
+hollemusic
 ```
 
 ### 方式三：独立可执行文件（无需任何环境）
@@ -53,10 +56,12 @@ Holle
 git clone https://github.com/Redpinkt5/Holle.git
 cd Holle
 pip install -e .
-Holle
+hollemusic
 ```
 
 ## 使用说明
+
+### 终端操作
 
 启动后进入 TUI 界面，常用操作：
 
@@ -66,8 +71,28 @@ Holle
 | `←` / `b` | 上一曲 |
 | `→` / `n` | 下一曲 |
 | `Tab` | 切换焦点 |
+| 鼠标滚轮 | 调节音量 |
 
-命令行输入区支持以下命令：
+### 桌面宠物
+
+点击终端底部 `◆` 按钮启动桌面宠物，或直接运行：
+
+```bash
+hollepet
+```
+
+**宠物交互：**
+- 🖱️ **点击身体中部** — 播放/暂停
+- 🖱️ **点击左侧** — 上一曲
+- 🖱️ **点击右侧** — 下一曲
+- 🖱️ **点击顶部** — 切换播放模式
+- 🖱️ **点击底部** — 打开聊天输入框
+- 🖱️ **双击** — 显示正在播放歌单
+- 🖱️ **拖动** — 移动位置
+
+### 命令列表
+
+终端和桌宠均支持以下命令：
 
 | 命令 | 说明 |
 |------|------|
@@ -77,6 +102,7 @@ Holle
 | `/prev` | 上一曲 |
 | `/volume <0-100>` | 调节音量 |
 | `/color <颜色>` | 切换主题色（pink / blue / red / green / yellow / purple / orange / gray / brown / black / white / colorful） |
+| `/maincolor <light\|dark>` | 切换桌宠明暗主题 |
 | `/search <关键词>` | 搜索歌曲 |
 | `/scan <路径>` | 扫描文件夹添加到播放列表 |
 | `/help` | 查看帮助 |
@@ -100,7 +126,8 @@ python scripts/build-exe.py
 - [mutagen](https://mutagen.readthedocs.io/) — 音频元数据读取
 - [librosa](https://librosa.org/) — 音频频谱分析
 - [Pillow](https://pillow.readthedocs.io/) — 专辑封面处理
-- OpenAI API / SiliconFlow — AI 对话
+- Ark API / OpenAI API — AI 对话
+- Win32 API — 桌面宠物窗口
 
 ## License
 
