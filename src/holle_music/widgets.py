@@ -139,8 +139,7 @@ _SHIMMER_PALETTES: dict[str, list[str]] = {
                  "#d2691e", "#b8860b", "#cd853f", "#8b7355", "#c4a882"],
     "black":    ["#333333", "#444444", "#555555", "#666666", "#777777",
                  "#888888", "#999999", "#2c2c2c", "#3d3d3d", "#4e4e4e"],
-    "white":    ["#ffffff", "#f8f8ff", "#f5f5f5", "#fffafa", "#f0f8ff",
-                 "#fdf5e6", "#fffacd", "#fff8dc", "#fff0f5", "#f5fffa"],
+    "white":    ["#ffffff"],
     "colorful": ["#ff69b4", "#ffd700", "#ff4500", "#1e90ff", "#8b00ff",
                  "#00ff7f", "#ff8c00", "#b0b0b0", "#8b4513", "#ffffff"],
 }
@@ -350,12 +349,7 @@ class ChatBubbles(RichLog, can_focus=True):
 
     def on_mount(self) -> None:
         super().on_mount()
-        idx = [0]
-        def _tick():
-            idx[0] += 1
-            if self._messages:
-                self._redraw()
-        self._shimmer_timer = self.set_interval(_SHIMMER_INTERVAL, _tick)
+        # Chat bubbles use a fixed palette color; no shimmer timer.
 
     def add_user_msg(self, text: str) -> None:
         from datetime import datetime
@@ -396,7 +390,7 @@ class ChatBubbles(RichLog, can_focus=True):
             w = 40
         if w < 20:
             w = 40
-        ai_color = _rotating_color()
+        ai_color = _SHIMMER_PALETTES.get(get_shimmer_palette(), _SHIMMER_PALETTES["pink"])[0]
         max_w = max(20, w - 6)
         ts_color = "dim"
         for role, text, t in self._messages:
@@ -739,12 +733,18 @@ class Mascot(Static):
 
     def on_click(self, event) -> None:
         w = self.size.width
-        if w <= 0:
+        h = self.size.height
+        if w <= 0 or h <= 0:
             return
-        third = event.x / w
-        if third < 0.33:
+        nx = event.x / w
+        ny = event.y / h
+        # Top-center area cycles play mode, matching the desktop pet.
+        if ny < 0.3 and 0.25 <= nx <= 0.75:
+            self.post_message(self.Clicked("mode"))
+            return
+        if nx < 0.33:
             self.post_message(self.Clicked("prev"))
-        elif third < 0.66:
+        elif nx < 0.66:
             self.post_message(self.Clicked("toggle"))
         else:
             self.post_message(self.Clicked("next"))
@@ -783,7 +783,7 @@ class Controls(Static):
             with Horizontal(id="controls-top"):
                 yield Mascot(id="mascot")
                 yield Static("", id="clock")
-                yield Button(" 🐾 ", id="btn-pet", variant="primary")
+                yield Button(" ◆ ", id="btn-pet", classes="mode-btn")
             with Horizontal(id="controls-modes"):
                 yield Button(" ⭢ ", id="btn-mode-seq", classes="mode-btn")
                 yield Button(" ↬ ", id="btn-mode-rand", classes="mode-btn")
@@ -822,6 +822,12 @@ class Controls(Static):
                     btn.styles.color = "#888888"
             except Exception:
                 pass
+
+    def set_mode(self, mode: str) -> None:
+        """Set the displayed mode without posting a change message."""
+        if mode in ("sequential", "random", "repeat"):
+            self._mode = mode
+            self._update_mode_buttons()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id

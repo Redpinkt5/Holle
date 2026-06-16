@@ -19,3 +19,8 @@ venv/
 
 # Claude
 .claude/
+
+# User settings
+.holle_settings.json
+.holle_color.json
+*pet_pos.json

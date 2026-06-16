@@ -1,223 +1,315 @@
-"""Bubble system — floating UI for input, responses, and mode switching."""
+"""Bubble state machine — manages input, response and mode state for the pet window."""
 
 from __future__ import annotations
 
-import tkinter as tk
+import time
 from typing import Callable
-
-BG = "#000000"
-ACCENT = "#ff69b4"
-FG = "white"
 
 
 class BubbleManager:
-    """Manages floating tkinter widgets beside the desktop pet."""
+    """Pure state manager for bubbles drawn inside the layered pet window.
+
+    This class no longer creates tkinter windows; it only tracks what bubble
+    should be rendered and forwards user input to the registered callbacks.
+    """
+
+    # Auto-hide timeouts (seconds)
+    MODE_TIMEOUT = 8.0
+    LOADING_TIMEOUT = 30.0
+
+    # Cursor blink period
+    CURSOR_PERIOD = 0.53
+
+    # Loading animation period
+    LOADING_PERIOD = 0.4
 
     def __init__(
         self,
-        parent_hwnd: int,
+        parent_hwnd: int = 0,
         on_action: Callable[[str], None] | None = None,
         on_chat_submit: Callable[[str], None] | None = None,
     ) -> None:
         self._parent_hwnd = parent_hwnd
         self._on_action = on_action
         self._on_chat_submit = on_chat_submit
+
+        self._state: str = "none"  # none | input | loading | response | mode
         self._pending_response: str | None = None
 
-        self._root: tk.Tk | None = None
-        self._input_win: tk.Toplevel | None = None
-        self._entry: tk.Entry | None = None
-        self._mode_win: tk.Toplevel | None = None
-        self._bubbles: list[tk.Toplevel] = []
+        # Input state
+        self._input_text: str = ""
+        self._input_focused: bool = False
+        self._input_history: list[str] = []
+        self._history_index: int = -1  # -1 means current (not yet submitted) input
+        self._history_draft: str = ""
 
-    def _ensure_root(self) -> None:
-        if self._root is not None:
+        # Loading state
+        self._loading_frame: int = 0
+        self._last_loading_update: float = 0.0
+        self._loading_until: float = 0.0
+        self._loading_overlay: str | None = None
+
+        # Response state
+        self._response_text: str = ""
+        self._response_cover: Image.Image | None = None
+
+        # Mode picker state
+        self._mode_until: float = 0.0
+
+        # Cursor blink state
+        self._cursor_visible: bool = True
+        self._last_cursor_toggle: float = 0.0
+
+    # ── Public state queries ────────────────────────────────────────────
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+    @property
+    def input_text(self) -> str:
+        return self._input_text
+
+    @property
+    def response_text(self) -> str:
+        return self._response_text
+
+    @property
+    def cursor_visible(self) -> bool:
+        return self._cursor_visible and self._state == "input"
+
+    @property
+    def mode_active(self) -> bool:
+        return self._state == "mode"
+
+    @property
+    def loading_active(self) -> bool:
+        return self._state == "loading"
+
+    @property
+    def loading_frame(self) -> int:
+        return self._loading_frame
+
+    @property
+    def loading_overlay(self) -> str | None:
+        return self._loading_overlay
+
+    def set_loading_overlay(self, text: str) -> None:
+        """Show extra status text below the loading dots without replacing them."""
+        self._loading_overlay = text
+
+    def clear_loading_overlay(self) -> None:
+        """Clear the loading overlay text."""
+        self._loading_overlay = None
+
+    @property
+    def has_active_bubble(self) -> bool:
+        return self._state in ("input", "loading", "response", "mode")
+
+    # ── Input lifecycle ─────────────────────────────────────────────────
+
+    def show_input(self) -> None:
+        """Open the input bubble and reset its text."""
+        self.hide_mode_picker()
+        self._state = "input"
+        self._input_text = ""
+        self._input_focused = True
+        self._cursor_visible = True
+        self._last_cursor_toggle = time.monotonic()
+
+    def hide_input(self) -> None:
+        """Close the input bubble without submitting."""
+        if self._state == "input":
+            self._state = "none"
+            self._input_focused = False
+
+    def toggle_input(self) -> None:
+        """Open the input bubble if closed, or close it if already open."""
+        if self._state == "input":
+            self.hide_input()
+        else:
+            self.show_input()
+
+    def input_append(self, char: str) -> None:
+        """Append a typed character to the input text."""
+        if self._state != "input":
             return
-        self._root = tk.Tk()
-        # Hide root by making it tiny and placing it offscreen
-        self._root.geometry("1x1+-100+-100")
-        self._root.attributes("-alpha", 0)
+        # Ignore control characters that slip through WM_CHAR
+        if char.isprintable():
+            self._input_text += char
 
-    # ── input box ───────────────────────────────────────────────────
+    def input_backspace(self) -> None:
+        """Remove the last character from the input text."""
+        if self._state == "input" and self._input_text:
+            self._input_text = self._input_text[:-1]
 
-    def show_input(self, pet_rect: tuple[int, int, int, int]) -> None:
-        self._destroy_input()
-        self._ensure_root()
-        x, y = _pos_input(pet_rect)
+    def input_history_up(self) -> bool:
+        """Show the previous history entry; return True if the text changed."""
+        if self._state != "input" or not self._input_history:
+            return False
+        if self._history_index == -1:
+            self._history_draft = self._input_text
+        if self._history_index < len(self._input_history) - 1:
+            self._history_index += 1
+            self._input_text = self._input_history[-(self._history_index + 1)]
+            return True
+        return False
 
-        self._input_win = tk.Toplevel(self._root)
-        self._input_win.overrideredirect(True)
-        self._input_win.attributes("-topmost", True)
-        self._input_win.geometry(f"220x32+{x}+{y}")
-        self._input_win.configure(bg=BG)
-        self._input_win.bind("<Escape>", lambda _e: self._destroy_input())
+    def input_history_down(self) -> bool:
+        """Show the next history entry or restore the draft; return True if changed."""
+        if self._state != "input" or self._history_index == -1:
+            return False
+        self._history_index -= 1
+        if self._history_index == -1:
+            self._input_text = self._history_draft
+        else:
+            self._input_text = self._input_history[-(self._history_index + 1)]
+        return True
 
-        self._entry = tk.Entry(self._input_win, bg="#111", fg=FG, insertbackground=FG,
-                               relief="flat", bd=4, font=("Segoe UI", 10))
-        self._entry.pack(side="left", fill="x", expand=True, padx=4)
-        self._entry.bind("<Return>", lambda _e: self._do_send())
-        self._entry.after(80, self._entry.focus_force)
+    def submit_input(self) -> None:
+        """Submit the current input text and close the input bubble."""
+        if self._state != "input":
+            return
+        text = self._input_text.strip()
+        self.hide_input()
+        if text and self._on_chat_submit:
+            # Save to history (avoid duplicate consecutive entries)
+            if not self._input_history or self._input_history[-1] != text:
+                self._input_history.append(text)
+            # Reset history navigation
+            self._history_index = -1
+            self._history_draft = ""
+            self._on_chat_submit(text)
+            self.show_loading()
 
-    # ── response bubble ─────────────────────────────────────────────
+    # ── Response lifecycle ──────────────────────────────────────────────
 
-    def queue_response(self, text: str) -> None:
+    def queue_response(self, text: str, cover: Image.Image | None = None) -> None:
+        """Queue a response to be displayed on the next update cycle."""
         self._pending_response = text
+        self._pending_cover = cover
 
-    def show_response(self, text: str, pet_rect: tuple[int, int, int, int]) -> None:
-        self._ensure_root()
-        x, y = _pos_bubble(pet_rect)
+    @property
+    def response_cover(self) -> Image.Image | None:
+        return self._response_cover
 
-        w = min(280, max(140, len(text) * 8 + 40))
-        h = 32 + (len(text) // 22 + 1) * 18
+    def show_response(self, text: str, cover: Image.Image | None = None) -> None:
+        """Display a response bubble; it stays until explicitly dismissed."""
+        self.hide_input()
+        self.hide_loading()
+        self.hide_mode_picker()
+        self._state = "response"
+        self._response_text = text
+        self._response_cover = cover
 
-        win = tk.Toplevel(self._root)
-        win.overrideredirect(True)
-        win.attributes("-topmost", True)
-        win.geometry(f"{w}x{h}+{x}+{y}")
-        win.configure(bg=BG)
+    def hide_response(self) -> None:
+        """Close the response bubble immediately."""
+        self._close_response()
 
-        f = tk.Frame(win, bg=BG, padx=10, pady=8)
-        f.pack(fill="both", expand=True)
-        tk.Label(f, text=text, fg=FG, bg=BG, font=("Segoe UI", 10),
-                 wraplength=w - 24, justify="left").pack()
+    def _close_response(self) -> None:
+        if self._state == "response":
+            self._state = "none"
+        self._response_text = ""
+        self._response_cover = None
 
-        win.after(6000, win.destroy)
-        self._bubbles.append(win)
+    # ── Loading lifecycle ───────────────────────────────────────────────
 
-    # ── mode balls ──────────────────────────────────────────────────
+    def show_loading(self) -> None:
+        """Show a loading/thinking bubble while waiting for AI reply."""
+        self.hide_input()
+        self._close_response()
+        self.hide_mode_picker()
+        self._state = "loading"
+        self._loading_frame = 0
+        self._last_loading_update = time.monotonic()
+        self._loading_until = time.monotonic() + self.LOADING_TIMEOUT
 
-    def show_mode_bubble(self, pet_rect: tuple[int, int, int, int]) -> None:
-        self._destroy_input()
-        self._ensure_root()
+    def hide_loading(self) -> None:
+        """Close the loading bubble."""
+        if self._state == "loading":
+            self._state = "none"
+        self._loading_overlay = None
 
-        if self._mode_win is not None:
-            try: self._mode_win.destroy()
-            except Exception: pass
+    # ── Mode picker lifecycle ───────────────────────────────────────────
 
-        x, y = _pos_mode(pet_rect)
-        sq = 44   # square size
-        gap = 10
-        pad = 8
-        w = sq * 3 + gap * 2 + pad * 2
-        h = sq + pad * 2
+    def show_mode_picker(self) -> None:
+        """Open the mode picker bubble."""
+        self.hide_input()
+        self.hide_loading()
+        self._close_response()
+        self._state = "mode"
+        self._mode_until = time.monotonic() + self.MODE_TIMEOUT
 
-        self._mode_win = tk.Toplevel(self._root)
-        self._mode_win.overrideredirect(True)
-        self._mode_win.attributes("-topmost", True)
-        self._mode_win.geometry(f"{w}x{h}+{x}+{y}")
-        self._mode_win.configure(bg="gray1")
-        self._mode_win.attributes("-transparentcolor", "gray1")
+    def hide_mode_picker(self) -> None:
+        """Close the mode picker bubble."""
+        if self._state == "mode":
+            self._state = "none"
+        self._mode_until = 0.0
 
-        canvas = tk.Canvas(self._mode_win, width=w, height=h,
-                           bg="gray1", highlightthickness=0, bd=0)
-        canvas.pack()
-
-        modes = [
-            ("sequential", "⭢"),
-            ("random", "↬"),
-            ("repeat", "⟳"),
-        ]
-        item_data: list[tuple[int, str]] = []
-        name_map = {"sequential": "顺序播放", "random": "随机播放", "repeat": "单曲循环"}
-
-        for i, (mode, symbol) in enumerate(modes):
-            lx = pad + i * (sq + gap)
-            ty = pad
-            rx = lx + sq
-            by = ty + sq
-            cx = lx + sq // 2
-            cy = ty + sq // 2
-
-            item = canvas.create_rectangle(lx, ty, rx, by,
-                                           fill="white", outline="", width=0)
-            item_data.append((item, mode))
-            canvas.create_text(cx, cy, text=symbol, fill="#151515",
-                               font=("Segoe UI", 18, "bold"))
-
-        def on_click(event):
-            for item_id, mode_val in item_data:
-                overlap = canvas.find_overlapping(event.x, event.y, event.x, event.y)
-                if item_id in overlap:
-                    if self._on_action:
-                        self._on_action(f"set_mode:{mode_val}")
-                    self._mode_win.destroy()
-                    self._mode_win = None
-                    self.queue_response(f"{name_map[mode_val]}模式已开启")
-                    return
-
-        canvas.bind("<Button-1>", on_click)
-
-        def _auto_hide():
-            if self._mode_win:
-                self._mode_win.destroy()
-                self._mode_win = None
-        self._mode_win.after(8000, _auto_hide)
-
-    # ── lifecycle ───────────────────────────────────────────────────
-
-    def update(self) -> None:
-        if self._root is not None:
-            try:
-                self._root.update_idletasks()
-                self._root.update()
-            except Exception:
-                pass
-
-    def _do_send(self) -> None:
-        if self._entry is None:
+    def select_mode(self, mode: str) -> None:
+        """Select a mode and notify via on_action."""
+        if self._state != "mode":
             return
-        t = self._entry.get().strip()
-        self._destroy_input()
-        if t and self._on_chat_submit:
-            self._on_chat_submit(t)
+        self.hide_mode_picker()
+        if self._on_action:
+            self._on_action(f"set_mode:{mode}")
 
-    def _destroy_input(self) -> None:
-        if self._input_win is not None:
-            try:
-                self._input_win.destroy()
-            except Exception:
-                pass
-            self._input_win = None
-        self._entry = None
+    # ── Update pump ─────────────────────────────────────────────────────
 
+    def update(self) -> bool:
+        """Process timers, cursor blink and loading animation.
 
-# ── positioning ─────────────────────────────────────────────────────
+        Returns True if the visual state changed and a redraw is needed.
+        """
+        changed = False
+        now = time.monotonic()
 
-def _pos_input(pet: tuple[int, int, int, int]) -> tuple[int, int]:
-    px, py, px2, py2 = pet
-    try:
-        import win32api; sw = win32api.GetSystemMetrics(0)
-    except Exception:
-        sw = 1920
-    mid = sw // 2
-    x = px2 + 8 if px < mid else px - 228
-    y = py + 20
-    if x < 4: x = 4
-    if x + 220 > sw - 4: x = sw - 224
-    return x, y
+        # Loading animation frame / timeout
+        if self._state == "loading":
+            if now - self._last_loading_update >= self.LOADING_PERIOD:
+                self._loading_frame = (self._loading_frame + 1) % 3
+                self._last_loading_update = now
+                changed = True
+            if now >= self._loading_until:
+                self.hide_loading()
+                self.show_response("请求超时，请重试")
+                changed = True
 
+        # Mode picker auto-hide
+        if self._state == "mode" and now >= self._mode_until:
+            self.hide_mode_picker()
+            changed = True
 
-def _pos_bubble(pet: tuple[int, int, int, int]) -> tuple[int, int]:
-    px, py, px2, py2 = pet
-    try:
-        import win32api; sw = win32api.GetSystemMetrics(0)
-    except Exception:
-        sw = 1920
-    mid = sw // 2
-    x = px2 + 8 if px < mid else px - 228
-    y = py - 10
-    if x < 4: x = 4
-    return x, y
+        # Cursor blink for input bubble
+        if self._state == "input":
+            if now - self._last_cursor_toggle >= self.CURSOR_PERIOD:
+                self._cursor_visible = not self._cursor_visible
+                self._last_cursor_toggle = now
+                changed = True
 
+        return changed
 
-def _pos_mode(pet: tuple[int, int, int, int]) -> tuple[int, int]:
-    px, py, px2, py2 = pet
-    try:
-        import win32api; sw = win32api.GetSystemMetrics(0)
-    except Exception:
-        sw = 1920
-    mid = sw // 2
-    x = px2 + 8 if px < mid else px - 228
-    y = py - 40
-    if x < 4: x = 4
-    return x, y
+    def take_pending_response(self) -> tuple[str | None, Image.Image | None]:
+        """Return and clear any queued response text and cover."""
+        text = self._pending_response
+        cover = getattr(self, "_pending_cover", None)
+        self._pending_response = None
+        self._pending_cover = None
+        return text, cover
+
+    # ── Backwards-compatible aliases ────────────────────────────────────
+
+    def update_pet_rect(self, pet_rect: tuple[int, int, int, int]) -> None:
+        """No-op: kept for backwards compatibility with older callers."""
+
+    def destroy(self) -> None:
+        """Reset all state."""
+        self._state = "none"
+        self._input_text = ""
+        self._response_text = ""
+        self._response_cover = None
+        self._mode_until = 0.0
+        self._loading_frame = 0
+        self._last_loading_update = 0.0
+        self._loading_until = 0.0
+        self._pending_response = None

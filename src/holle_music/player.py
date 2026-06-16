@@ -21,7 +21,7 @@ class Player:
 
     def __init__(self) -> None:
         self._state = PlayerState.STOPPED
-        self._volume = 0.20
+        self._volume = 1.0
         self._playlist: list[Song] = []
         self._current_index = 0
         self._initialized = False
@@ -30,6 +30,7 @@ class Player:
         self._play_start: float = 0.0
         self._paused_at: float = 0.0
         self._play_mode: str = "sequential"
+        self._resume_position: float = 0.0
 
     def set_play_mode(self, mode: str) -> None:
         self._play_mode = mode
@@ -114,11 +115,13 @@ class Player:
         else:
             if not Path(path).exists():
                 return
+            start_pos = self._resume_position
+            self._resume_position = 0.0
             pygame.mixer.music.stop()
             pygame.mixer.music.load(path)
-            pygame.mixer.music.play()
+            pygame.mixer.music.play(start=start_pos)
             pygame.mixer.music.set_volume(self._volume)
-            self._play_start = time.monotonic()
+            self._play_start = time.monotonic() - start_pos
             self._state = PlayerState.PLAYING
             self._notify_song_change()
             # Load spectrum in background to avoid blocking playback
@@ -190,6 +193,10 @@ class Player:
         self._play_start = time.monotonic() - position_seconds
         self._paused_at = position_seconds
 
+    def set_resume_position(self, position: float) -> None:
+        """Set the position to resume from the next time play() is called."""
+        self._resume_position = max(0.0, position)
+
     def get_duration(self) -> float:
         """Return current song duration in seconds."""
         song = self.current_song
@@ -227,16 +234,31 @@ class Player:
             self._current_index = (self._current_index + 1) % len(self._playlist)
         if was_playing:
             self.play()
+        else:
+            # Notify even when paused so UI/state stays in sync.
+            self._notify_song_change()
 
-    def previous(self) -> None:
+    def previous(self, restart_threshold_seconds: float = 5.0) -> None:
         if not self._playlist:
             return
+        # If currently playing and within the first few seconds, restart the
+        # current song instead of going back to the previous track.
+        if (
+            self._state == PlayerState.PLAYING
+            and (time.monotonic() - self._play_start) >= restart_threshold_seconds
+        ):
+            self.play()
+            return
+
         was_playing = self._state == PlayerState.PLAYING
         if was_playing:
             self._state = PlayerState.STOPPED
         self._current_index = (self._current_index - 1) % len(self._playlist)
         if was_playing:
             self.play()
+        else:
+            # Notify even when paused so UI/state stays in sync.
+            self._notify_song_change()
 
     def cleanup(self) -> None:
         if self._initialized:

@@ -21,11 +21,14 @@ except ImportError:  # pragma: no cover
     win32gui = None  # type: ignore[assignment]
     win32ui = None  # type: ignore[assignment]
 
+from PIL import Image
+
 from holle_music.pet.bubble import BubbleManager
+from holle_music.pet.bubble_renderer import BubbleRenderer
 from holle_music.pet.click_zone import ClickZone
 from holle_music.pet.renderer import MascotRenderer, CELL_W, CELL_H, PADDING
 from holle_music.widgets import Mascot as MascotWidget
-from holle_music.widgets import _SHIMMER_PALETTES, _SHIMMER_INTERVAL, _current_palette
+from holle_music.widgets import _SHIMMER_INTERVAL, _SHIMMER_PALETTES, get_shimmer_palette
 
 
 class PetWindow:
@@ -34,11 +37,13 @@ class PetWindow:
     def __init__(
         self,
         on_action: Callable[[str], None] | None = None,
+        on_double_click: Callable[[], None] | None = None,
         dialog: object | None = None,
     ) -> None:
         self._renderer = MascotRenderer()
         self._click_zone = ClickZone()
         self._on_action = on_action
+        self._on_double_click = on_double_click
         self._dialog = dialog
         self._hwnd: int = 0
         self._dragging = False
@@ -46,7 +51,12 @@ class PetWindow:
         self._drag_click_pos: tuple[int, int] | None = None
         self._drag_has_moved = False
         self._drag_start_time = 0.0
-        self._window_pos = self._load_position()
+        self._mascot_pos = self._load_position()
+        self._window_pos = self._mascot_pos
+        self._bubble_offset: tuple[int, int] = (0, 0)
+        self._window_size: tuple[int, int] = self._calc_size()
+        self._last_window_size: tuple[int, int] = self._window_size
+        self._mode_hit_rects: list[tuple[str, tuple[int, int, int, int]]] = []
         self._last_eye_update = 0.0
         self._direction = "center"
         self._active = False
@@ -56,23 +66,89 @@ class PetWindow:
         self._running = True
         self._size = self._calc_size()
         self._on_player_state_check: Callable[[], bool] | None = None
+        self._on_volume_check: Callable[[], float] | None = None
+        self._on_song_end_check: Callable[[], None] | None = None
+        self._volume: float = 1.0
+        self._last_volume_check: float = 0.0
+        self._last_song_end_check: float = 0.0
+        self._is_terminal_running: Callable[[], bool] | None = None
+        self._on_settings_sync: Callable[[], None] | None = None
+        self._last_settings_sync: float = 0.0
+        self._bubble_renderer = BubbleRenderer()
         self._bubble = BubbleManager(0, on_action=on_action)
+        self._pending_click_zone: str | None = None
+        self._pending_click_timer: int | None = None
+        self._exit_confirm_pending: bool = False
+        self._exit_confirm_time: float = 0.0
+        self._last_bubble_rect: tuple[int, int, int, int] | None = None
+        self._main_color: str = "light"
+
+    # Timeout before an unanswered exit confirmation auto-dismisses (seconds).
+    EXIT_CONFIRM_TIMEOUT: float = 3.0
 
     def set_chat_submit_callback(self, callback: Callable[[str], None]) -> None:
         """Set callback for chat message submission."""
         self._bubble._on_chat_submit = callback
 
-    def show_response_bubble(self, text: str) -> None:
+    def set_volume(self, volume: float) -> None:
+        """Set current volume (0.0-1.0) and redraw if changed."""
+        volume = max(0.0, min(1.0, volume))
+        if volume != self._volume:
+            self._volume = volume
+            self._update_display()
+
+    def set_volume_check(self, callback: Callable[[], float]) -> None:
+        """Set a callback that returns the current volume for periodic sync."""
+        self._on_volume_check = callback
+
+    def set_song_end_check(self, callback: Callable[[], None]) -> None:
+        """Set a callback invoked periodically to advance at song end."""
+        self._on_song_end_check = callback
+
+    def set_terminal_check(self, callback: Callable[[], bool]) -> None:
+        """Set a callback that returns True if the terminal is running."""
+        self._is_terminal_running = callback
+
+    def set_settings_sync(self, callback: Callable[[], None]) -> None:
+        """Set a callback invoked periodically to sync settings from the main app."""
+        self._on_settings_sync = callback
+
+    def set_main_color(self, color: str) -> None:
+        """Set main color theme ("light" or "dark") and redraw."""
+        if color != self._main_color:
+            self._main_color = color
+            self._update_display()
+
+    def show_response_bubble(self, text: str, cover: Image.Image | None = None) -> None:
         """Queue an AI response bubble to be shown in main loop."""
-        self._bubble.queue_response(text)
+        # A new response overrides the middle-click exit confirmation.
+        self._exit_confirm_pending = False
+        self._bubble.queue_response(text, cover)
+
+    def show_status_message(self, text: str) -> None:
+        """Show a status message without replacing a loading/thinking bubble.
+
+        If the AI is currently thinking, the status is added as an overlay line
+        in the loading bubble. Otherwise a normal response bubble is shown.
+        """
+        if self._bubble.state == "loading":
+            self._bubble.set_loading_overlay(text)
+            self._update_display()
+        else:
+            self.show_response_bubble(text)
 
     def _check_pending_bubbles(self) -> None:
         """Show any queued response bubbles."""
-        if self._bubble._pending_response and win32gui:
-            text = self._bubble._pending_response
-            self._bubble._pending_response = None
-            rect = win32gui.GetWindowRect(self._hwnd)
-            self._bubble.show_response(text, rect)
+        result = self._bubble.take_pending_response()
+        text = result[0] if isinstance(result, tuple) else result
+        cover = result[1] if isinstance(result, tuple) else None
+        if text:
+            self._log_error(f"[bubble] pending response received, len={len(text)}")
+            if win32gui:
+                self._bubble.show_response(text, cover)
+                self._log_error("[bubble] show_response called")
+                # Force a redraw so the response appears immediately.
+                self._update_display()
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -130,6 +206,31 @@ class PetWindow:
                 if is_playing != self._active:
                     self.set_active(is_playing)
 
+            # Sync volume for shimmer height (throttle to 0.5s)
+            if self._on_volume_check is not None and now - self._last_volume_check >= 0.5:
+                self._last_volume_check = now
+                try:
+                    new_volume = self._on_volume_check()
+                    self.set_volume(new_volume)
+                except Exception:
+                    pass
+
+            # Auto-advance to next song when standalone playback ends.
+            if self._on_song_end_check is not None and now - self._last_song_end_check >= 0.5:
+                self._last_song_end_check = now
+                try:
+                    self._on_song_end_check()
+                except Exception:
+                    pass
+
+            # Sync settings (color / main_color) from the main app.
+            if self._on_settings_sync is not None and now - self._last_settings_sync >= 1.0:
+                self._last_settings_sync = now
+                try:
+                    self._on_settings_sync()
+                except Exception:
+                    pass
+
             # Update tkinter dialog if open
             if self._dialog is not None:
                 try:
@@ -137,12 +238,24 @@ class PetWindow:
                 except Exception:
                     pass
 
-            # Process tkinter events for bubble panel
+            # Process bubble state timers and pending responses
             try:
-                self._bubble.update()
+                if self._bubble.update():
+                    self._update_display()
                 self._check_pending_bubbles()
             except Exception:
                 pass
+
+            # Auto-dismiss exit confirmation after timeout.
+            if self._exit_confirm_pending:
+                if (
+                    self._bubble.state != "response"
+                    or time.monotonic() - self._exit_confirm_time >= self.EXIT_CONFIRM_TIMEOUT
+                ):
+                    self._exit_confirm_pending = False
+                    if self._bubble.state == "response":
+                        self._bubble.hide_response()
+                        self._update_display()
 
             try:
                 self._update_animation()
@@ -180,9 +293,10 @@ class PetWindow:
         wndclass.hInstance = win32gui.GetModuleHandle(None)
         wndclass.lpszClassName = "HollePetWindow"
         wndclass.lpfnWndProc = self._wnd_proc
+        wndclass.style = win32con.CS_DBLCLKS
         win32gui.RegisterClass(wndclass)
 
-        w, h = self._size
+        w, h = self._window_size
 
         style = win32con.WS_POPUP
         ex_style = (
@@ -223,11 +337,15 @@ class PetWindow:
                 dy = cy - self._drag_start[1]
                 if abs(dx) > 3 or abs(dy) > 3:
                     self._drag_has_moved = True
-                self._window_pos = (
-                    self._window_pos[0] + dx,
-                    self._window_pos[1] + dy,
+                self._mascot_pos = (
+                    self._mascot_pos[0] + dx,
+                    self._mascot_pos[1] + dy,
                 )
                 self._drag_start = (cx, cy)
+                self._window_pos = (
+                    self._mascot_pos[0] - self._bubble_offset[0],
+                    self._mascot_pos[1] - self._bubble_offset[1],
+                )
                 win32gui.SetWindowPos(
                     hwnd, 0,
                     self._window_pos[0], self._window_pos[1],
@@ -235,37 +353,165 @@ class PetWindow:
                     win32con.SWP_NOSIZE | win32con.SWP_NOZORDER,
                 )
             else:
-                self._update_eye_direction(x, y)
+                # Eye tracking uses pet-relative coordinates.
+                self._update_eye_direction(x - self._bubble_offset[0], y - self._bubble_offset[1])
+            return 0
+
+        if msg == win32con.WM_CHAR:
+            # Append printable characters to the input bubble.
+            if self._bubble.state == "input":
+                try:
+                    char = chr(wparam)
+                    self._bubble.input_append(char)
+                    self._update_display()
+                except Exception:
+                    pass
+            return 0
+
+        if msg == win32con.WM_KEYDOWN:
+            if self._bubble.state == "input":
+                if wparam == win32con.VK_BACK:
+                    self._bubble.input_backspace()
+                    self._update_display()
+                    return 0
+                if wparam == win32con.VK_RETURN:
+                    self._log_error(f"[window] VK_RETURN, text len={len(self._bubble.input_text)}")
+                    self._bubble.submit_input()
+                    self._update_display()
+                    return 0
+                if wparam == win32con.VK_UP:
+                    if self._bubble.input_history_up():
+                        self._update_display()
+                    return 0
+                if wparam == win32con.VK_DOWN:
+                    if self._bubble.input_history_down():
+                        self._update_display()
+                    return 0
             return 0
 
         if msg == win32con.WM_LBUTTONDOWN:
             x = win32api.LOWORD(lparam)
             y = win32api.HIWORD(lparam)
+            pet_x = x - self._bubble_offset[0]
+            pet_y = y - self._bubble_offset[1]
+            pet_w, pet_h = self._size
+            in_pet = 0 <= pet_x < pet_w and 0 <= pet_y < pet_h
+
+            # If the mode picker is open, check its squares first.
+            if self._bubble.mode_active:
+                mode = self._hit_test_mode(pet_x, pet_y)
+                if mode:
+                    self._bubble.select_mode(mode)
+                    self._update_display()
+                    return 0
+                # Click outside the squares dismisses the mode picker.
+                self._bubble.hide_mode_picker()
+                self._update_display()
+                return 0
+
+            # Only start dragging when the user presses on the mascot body.
+            # Bubbles (input/response/loading) are no longer dismissed by left
+            # click; middle click is used for that instead.
+            if not in_pet:
+                return 0
+
             self._dragging = True
             self._drag_has_moved = False
             self._drag_start = win32api.GetCursorPos()
-            self._drag_click_pos = (x, y)
+            self._drag_click_pos = (pet_x, pet_y)
             self._drag_start_time = time.monotonic()
             return 0
 
         if msg == win32con.WM_LBUTTONUP:
             x = win32api.LOWORD(lparam)
             y = win32api.HIWORD(lparam)
+            pet_x = x - self._bubble_offset[0]
+            pet_y = y - self._bubble_offset[1]
             self._dragging = False
             press_duration = time.monotonic() - self._drag_start_time
             is_click = (not self._drag_has_moved) and (press_duration < 0.2)
-            if is_click and self._drag_click_pos:
-                zone = self._click_zone.detect(x, y, *self._size)
+            if is_click and self._drag_click_pos and self._bubble.state != "input":
+                zone = self._click_zone.detect(pet_x, pet_y, *self._size)
                 if zone:
-                    try:
-                        self._handle_click(zone)
-                    except Exception as e:
-                        print(f"[PET] Click error: {e}")
+                    # Defer single-click execution briefly so a double-click can
+                    # cancel it; this prevents play/pause from firing on dblclk.
+                    self._pending_click_zone = zone
+                    self._pending_click_timer = 2
+                    import ctypes
+                    ctypes.windll.user32.SetTimer(hwnd, 2, 200, None)
             self._drag_has_moved = False
             return 0
 
+        if msg == win32con.WM_LBUTTONDBLCLK:
+            x = win32api.LOWORD(lparam)
+            y = win32api.HIWORD(lparam)
+            pet_x = x - self._bubble_offset[0]
+            pet_y = y - self._bubble_offset[1]
+            pet_w, pet_h = self._size
+            in_pet = 0 <= pet_x < pet_w and 0 <= pet_y < pet_h
+            # Cancel any pending single click.
+            if self._pending_click_timer is not None:
+                import ctypes
+                ctypes.windll.user32.KillTimer(hwnd, self._pending_click_timer)
+                self._pending_click_timer = None
+            self._pending_click_zone = None
+            self._dragging = False
+            self._drag_has_moved = False
+            if in_pet and self._on_double_click:
+                try:
+                    self._on_double_click()
+                except Exception as e:
+                    print(f"[PET] Double-click error: {e}")
+            return 0
+
         if msg == win32con.WM_MBUTTONDOWN:
-            self._switch_back_to_terminal()
+            # Exit confirmation:
+            # - First middle-click with no bubble -> ask for confirmation.
+            # - Confirmation showing:
+            #     * middle-click on the bubble -> cancel
+            #     * middle-click outside the bubble -> confirm (switch/close)
+            # - Any other active bubble is dismissed normally.
+            x = win32api.LOWORD(lparam)
+            y = win32api.HIWORD(lparam)
+            rect = self._last_bubble_rect
+            on_bubble = (
+                rect is not None
+                and rect[0] <= x <= rect[2]
+                and rect[1] <= y <= rect[3]
+            )
+
+            if self._exit_confirm_pending and self._bubble.state == "response":
+                if on_bubble:
+                    # Cancel: dismiss the confirmation bubble.
+                    self._bubble.hide_response()
+                    self._exit_confirm_pending = False
+                    self._update_display()
+                else:
+                    # Confirm: switch back to terminal / close pet.
+                    self._switch_back_to_terminal()
+            elif self._bubble.has_active_bubble:
+                if self._bubble.state == "input":
+                    self._bubble.hide_input()
+                elif self._bubble.state == "response":
+                    self._bubble.hide_response()
+                elif self._bubble.state == "loading":
+                    self._bubble.hide_loading()
+                elif self._bubble.state == "mode":
+                    self._bubble.hide_mode_picker()
+                # Reset any leftover drag/click state so the next left click is
+                # processed as a fresh click instead of being ignored.
+                self._dragging = False
+                self._drag_has_moved = False
+                self._drag_click_pos = None
+                self._ignore_next_click = False
+                self._exit_confirm_pending = False
+                self._update_display()
+            elif not self._exit_confirm_pending:
+                self.show_response_bubble("确定要退出吗？再点击一次即可")
+                self._exit_confirm_pending = True
+                self._exit_confirm_time = time.monotonic()
+            else:
+                self._switch_back_to_terminal()
             return 0
 
         if msg == win32con.WM_MOUSEWHEEL:
@@ -282,13 +528,31 @@ class PetWindow:
             return 0
 
         if msg == win32con.WM_TIMER:
+            if wparam == 2:
+                # Pending single-click timer fired: execute the click.
+                zone = self._pending_click_zone
+                self._pending_click_zone = None
+                self._pending_click_timer = None
+                if zone:
+                    try:
+                        self._handle_click(zone)
+                    except Exception as e:
+                        print(f"[PET] Click error: {e}")
+                return 0
             self._update_animation()
             return 0
 
         if msg == win32con.WM_DESTROY:
             self._running = False
             import ctypes
-            ctypes.windll.user32.KillTimer(hwnd, 1)
+            try:
+                ctypes.windll.user32.KillTimer(hwnd, 1)
+            except Exception:
+                pass
+            try:
+                ctypes.windll.user32.KillTimer(hwnd, 2)
+            except Exception:
+                pass
             win32gui.PostQuitMessage(0)
             return 0
 
@@ -299,8 +563,8 @@ class PetWindow:
         try:
             mx, my = win32api.GetCursorPos()
             rect = win32gui.GetWindowRect(self._hwnd)
-            rel_x = mx - rect[0]
-            rel_y = my - rect[1]
+            rel_x = mx - rect[0] - self._bubble_offset[0]
+            rel_y = my - rect[1] - self._bubble_offset[1]
             self._update_eye_direction(rel_x, rel_y)
         except Exception:
             pass
@@ -355,7 +619,7 @@ class PetWindow:
         if now - self._last_shimmer_update < _SHIMMER_INTERVAL:
             return
         self._last_shimmer_update = now
-        palette = _SHIMMER_PALETTES[_current_palette]
+        palette = _SHIMMER_PALETTES[get_shimmer_palette()]
         self._shimmer_idx = (self._shimmer_idx + 1) % len(palette)
         self._update_display()
 
@@ -363,13 +627,65 @@ class PetWindow:
         if not self._hwnd or win32gui is None:
             return
 
-        img = self._renderer.render(self._direction, self._active, palette_name=_current_palette, shimmer_idx=self._shimmer_idx)
-        w, h = img.size
+        try:
+            self._do_update_display()
+        except Exception as e:
+            self._log_error(f"_update_display error: {e}")
 
-        img_bytes = img.tobytes("raw", "BGRA")
-
+    def _do_update_display(self) -> None:
+        """Actual display update; exceptions are caught by _update_display."""
         import ctypes
         from ctypes import wintypes
+
+        pet_img = self._renderer.render(
+            self._direction,
+            self._active,
+            palette_name=get_shimmer_palette(),
+            shimmer_idx=self._shimmer_idx,
+            volume=self._volume,
+            main_color=self._main_color,
+        )
+
+        layout = self._compute_layout(pet_img.size)
+        self._window_size = layout["window_size"]
+        self._bubble_offset = layout["bubble_offset"]
+        self._mode_hit_rects = layout["mode_hit_rects"]
+
+        # Keep the mascot at the same screen position when the bubble changes.
+        new_window_pos = (
+            self._mascot_pos[0] - self._bubble_offset[0],
+            self._mascot_pos[1] - self._bubble_offset[1],
+        )
+        if (
+            new_window_pos != self._window_pos
+            or self._window_size != self._last_window_size
+        ):
+            win32gui.SetWindowPos(
+                self._hwnd,
+                0,
+                new_window_pos[0],
+                new_window_pos[1],
+                self._window_size[0],
+                self._window_size[1],
+                win32con.SWP_NOZORDER | win32con.SWP_NOACTIVATE,
+            )
+            self._window_pos = new_window_pos
+            self._last_window_size = self._window_size
+
+        # Composite mascot and bubble onto a single canvas.
+        canvas = Image.new("RGBA", self._window_size, (0, 0, 0, 0))
+        canvas.paste(pet_img, self._bubble_offset, pet_img)
+        if layout["bubble_image"] is not None and layout["bubble_pos"] is not None:
+            bubble_img = layout["bubble_image"]
+            bx = self._bubble_offset[0] + layout["bubble_pos"][0]
+            by = self._bubble_offset[1] + layout["bubble_pos"][1]
+            canvas.paste(bubble_img, (bx, by), bubble_img)
+            self._last_bubble_rect = (bx, by, bx + bubble_img.width, by + bubble_img.height)
+        else:
+            self._last_bubble_rect = None
+
+        w, h = canvas.size
+        img_bytes = canvas.tobytes("raw", "BGRA")
 
         gdi32 = ctypes.windll.gdi32
 
@@ -428,7 +744,6 @@ class PetWindow:
 
         old_bmp = win32gui.SelectObject(hdc_mem, hbmp)
 
-        # ctypes structures for UpdateLayeredWindow (avoids pywintypes trimming)
         class _POINT(ctypes.Structure):
             _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
 
@@ -470,16 +785,304 @@ class PetWindow:
         win32gui.DeleteDC(hdc_mem)
         win32gui.ReleaseDC(0, hdc_screen)
 
+    def _diagonal_bubble_position(
+        self,
+        pet_w: int,
+        pet_h: int,
+        bubble_w: int,
+        bubble_h: int,
+        force_h: str | None = None,
+        force_v: str | None = None,
+    ) -> tuple[int, int]:
+        """Place a bubble diagonally, leaving a gap of two body cells.
+
+        Pet in the upper-right  -> bubble goes to lower-left.
+        Pet in the lower-left  -> bubble goes to upper-right.
+        The gap between the mascot content edges and the bubble is kept at
+        two body rectangles (2 * CELL_H) so the bubble never sits flush.
+        """
+        # The bubble slightly overlaps the mascot content by 10px.
+        gap = -19.5
+
+        mx, my = self._mascot_pos
+        mid_x, mid_y = self._screen_center()
+        content_left, content_top, content_right, content_bottom = self._renderer.content_rect()
+
+        # Pick the side with more screen space, or use forced side.
+        if force_h == "left":
+            x = content_left - bubble_w - gap
+        elif force_h == "right":
+            x = content_right + gap
+        elif mx + pet_w // 2 > mid_x:
+            x = content_left - bubble_w - gap
+        else:
+            x = content_right + gap
+
+        if force_v == "top":
+            y = content_top - bubble_h - gap
+        elif force_v == "bottom":
+            y = content_bottom + gap
+        elif my + pet_h // 2 > mid_y:
+            y = content_top - bubble_h - gap
+        else:
+            y = content_bottom + gap
+
+        return int(round(x)), int(round(y))
+
+    def _screen_center(self) -> tuple[int, int]:
+        """Return the screen center point."""
+        try:
+            sw = win32api.GetSystemMetrics(0)
+            sh = win32api.GetSystemMetrics(1)
+        except Exception:
+            sw, sh = 1920, 1080
+        return sw // 2, sh // 2
+
+    def _compute_layout(
+        self, pet_size: tuple[int, int]
+    ) -> dict:
+        """Compute window layout for the current bubble state.
+
+        Returns a dict with:
+        - window_size: (width, height) of the layered window
+        - bubble_offset: (x, y) where the pet is placed inside the window
+        - bubble_pos: (x, y) where the bubble is placed relative to the pet
+        - bubble_image: rendered bubble PIL Image or None
+        - mode_hit_rects: list of (mode, rect) for click testing
+        """
+        pet_w, pet_h = pet_size
+        bubble_image: Image.Image | None = None
+        bubble_pos: tuple[int, int] | None = None
+        mode_hit_rects: list[tuple[str, tuple[int, int, int, int]]] = []
+
+        if self._bubble.state == "input":
+            bubble_image = self._bubble_renderer.render_input_bubble(
+                self._bubble.input_text, self._bubble.cursor_visible
+            )
+            # Center horizontally over the mascot content; place above/below
+            # based on vertical screen position, with a small gap from the pet.
+            content_left, content_top, content_right, content_bottom = self._renderer.content_rect()
+            x = (content_left + content_right - bubble_image.width) // 2
+            try:
+                sh = win32api.GetSystemMetrics(1)
+            except Exception:
+                sh = 1080
+            my = self._mascot_pos[1]
+            if my + pet_h // 2 > sh // 2:
+                y = content_top - bubble_image.height - 20
+            else:
+                y = content_bottom + 20
+            bubble_pos = (x, y)
+
+        elif self._bubble.state == "response":
+            bubble_image = self._bubble_renderer.render_response_bubble(
+                self._bubble.response_text,
+                cover_image=self._bubble.response_cover,
+            )
+            bubble_pos = self._diagonal_bubble_position(
+                pet_w, pet_h, bubble_image.width, bubble_image.height
+            )
+
+        elif self._bubble.state == "loading":
+            bubble_image = self._bubble_renderer.render_loading_bubble(
+                self._bubble.loading_frame,
+                self._bubble.loading_overlay,
+            )
+            bubble_pos = self._diagonal_bubble_position(
+                pet_w, pet_h, bubble_image.width, bubble_image.height
+            )
+
+        elif self._bubble.state == "mode":
+            current_mode = self._get_current_mode()
+            bubble_image = self._bubble_renderer.render_mode_picker(current_mode)
+            content_left, content_top, content_right, content_bottom = self._renderer.content_rect()
+            x = (content_left + content_right - bubble_image.width) // 2
+            y = content_top - bubble_image.height
+            bubble_pos = (x, y)
+            # Build hit rectangles for the three mode squares.
+            sq = 40
+            pad = 14
+            total_content = sq * 3
+            remaining = bubble_image.width - total_content - pad * 2
+            gap = remaining // 2
+            sq_y = (bubble_image.height - sq) // 2
+            modes = ["sequential", "random", "repeat"]
+            for i, mode in enumerate(modes):
+                sq_x = pad + i * (sq + gap)
+                rect = (
+                    x + sq_x,
+                    y + sq_y,
+                    x + sq_x + sq,
+                    y + sq_y + sq,
+                )
+                mode_hit_rects.append((mode, rect))
+
+        if bubble_pos is None or bubble_image is None:
+            return {
+                "window_size": pet_size,
+                "bubble_offset": (0, 0),
+                "bubble_pos": None,
+                "bubble_image": None,
+                "mode_hit_rects": [],
+            }
+
+        bx, by = bubble_pos
+        bx2 = bx + bubble_image.width
+        by2 = by + bubble_image.height
+
+        # Avoid extending past screen edges.
+        try:
+            sw = win32api.GetSystemMetrics(0)
+            sh = win32api.GetSystemMetrics(1)
+        except Exception:
+            sw, sh = 1920, 1080
+
+        mx, my = self._mascot_pos
+
+        # If the input bubble would extend past the top or bottom screen edge,
+        # flip it to the opposite vertical side of the pet.
+        if self._bubble.state == "input":
+            content_left, content_top, content_right, content_bottom = self._renderer.content_rect()
+            if my + by2 > sh - 20:
+                by = content_top - bubble_image.height - 20
+                by2 = by + bubble_image.height
+                bubble_pos = (bx, by)
+            elif my + by < 20:
+                by = content_bottom + 20
+                by2 = by + bubble_image.height
+                bubble_pos = (bx, by)
+
+        # Diagonal response/loading bubbles: flip horizontally if they would
+        # extend past the left or right screen edge.
+        if self._bubble.state in ("response", "loading"):
+            if mx + bx < 4:
+                bx, by = self._diagonal_bubble_position(
+                    pet_w, pet_h, bubble_image.width, bubble_image.height, force_h="right"
+                )
+                bx2 = bx + bubble_image.width
+                by2 = by + bubble_image.height
+                bubble_pos = (bx, by)
+            elif mx + bx2 > sw - 4:
+                bx, by = self._diagonal_bubble_position(
+                    pet_w, pet_h, bubble_image.width, bubble_image.height, force_h="left"
+                )
+                bx2 = bx + bubble_image.width
+                by2 = by + bubble_image.height
+                bubble_pos = (bx, by)
+
+        # If a bubble placed above the pet (response/loading/mode)
+        # would go above the visible screen, move it below the pet instead.
+        if self._bubble.state == "mode" and my + by < 4:
+            content_left, content_top, content_right, content_bottom = self._renderer.content_rect()
+            by = content_bottom
+            by2 = by + bubble_image.height
+            bubble_pos = (bx, by)
+            # Rebuild mode hit rectangles after moving below the pet.
+            mode_hit_rects = []
+            sq = 40
+            pad = 14
+            total_content = sq * 3
+            remaining = bubble_image.width - total_content - pad * 2
+            gap = remaining // 2
+            sq_y = (bubble_image.height - sq) // 2
+            modes = ["sequential", "random", "repeat"]
+            for i, mode in enumerate(modes):
+                sq_x = pad + i * (sq + gap)
+                rect = (bx + sq_x, by + sq_y, bx + sq_x + sq, by + sq_y + sq)
+                mode_hit_rects.append((mode, rect))
+        elif self._bubble.state in ("response", "loading") and my + by < 4:
+            bx, by = self._diagonal_bubble_position(
+                pet_w, pet_h, bubble_image.width, bubble_image.height, force_v="bottom"
+            )
+            bx2 = bx + bubble_image.width
+            by2 = by + bubble_image.height
+            bubble_pos = (bx, by)
+
+        # Final safety clamp: keep the entire bubble on screen.  This catches
+        # long input bubbles near the left/right edges and diagonal response
+        # bubbles that still overflow after flipping.
+        try:
+            sw = win32api.GetSystemMetrics(0)
+            sh = win32api.GetSystemMetrics(1)
+        except Exception:
+            sw, sh = 1920, 1080
+
+        mx, my = self._mascot_pos
+        bubble_w = bubble_image.width
+        bubble_h = bubble_image.height
+        bx, by = bubble_pos
+
+        if mx + bx < 4:
+            bx = 4 - mx
+        elif mx + bx + bubble_w > sw - 4:
+            bx = sw - 4 - bubble_w - mx
+
+        if my + by < 4:
+            by = 4 - my
+        elif my + by + bubble_h > sh - 4:
+            by = sh - 4 - bubble_h - my
+
+        bubble_pos = (bx, by)
+        bx2 = bx + bubble_w
+        by2 = by + bubble_h
+
+        # If the mode picker moved, rebuild its hit rectangles at the final position.
+        if self._bubble.state == "mode":
+            mode_hit_rects = []
+            sq = 40
+            pad = 14
+            total_content = sq * 3
+            remaining = bubble_image.width - total_content - pad * 2
+            gap = remaining // 2
+            sq_y = (bubble_image.height - sq) // 2
+            modes = ["sequential", "random", "repeat"]
+            for i, mode in enumerate(modes):
+                sq_x = pad + i * (sq + gap)
+                rect = (bx + sq_x, by + sq_y, bx + sq_x + sq, by + sq_y + sq)
+                mode_hit_rects.append((mode, rect))
+
+        min_x = min(0, bx)
+        min_y = min(0, by)
+        max_x = max(pet_w, bx2)
+        max_y = max(pet_h, by2)
+
+        window_size = (max_x - min_x, max_y - min_y)
+        bubble_offset = (-min_x, -min_y)
+
+        return {
+            "window_size": window_size,
+            "bubble_offset": bubble_offset,
+            "bubble_pos": bubble_pos,
+            "bubble_image": bubble_image,
+            "mode_hit_rects": mode_hit_rects,
+        }
+
+    def _hit_test_mode(self, pet_x: int, pet_y: int) -> str:
+        """Return the mode under the given pet-relative coordinate, or empty string."""
+        for mode, rect in self._mode_hit_rects:
+            x1, y1, x2, y2 = rect
+            if x1 <= pet_x < x2 and y1 <= pet_y < y2:
+                return mode
+        return ""
+
     # ── Click handling ────────────────────────────────────────────────────
 
     def _handle_click(self, zone: str) -> None:
-        # Delegate to bubble system for visual feedback
-        if zone in ("top", "bottom") and win32gui:
-            rect = win32gui.GetWindowRect(self._hwnd)
-            if zone == "top":
-                self._bubble.show_mode_bubble(rect)
-            elif zone == "bottom":
-                self._bubble.show_input(rect)
+        if zone == "top":
+            # One click on the top zone cycles to the next play mode; the
+            # callback shows a reply bubble with the new mode label.
+            if self._on_action:
+                self._on_action("top")
+        elif zone == "bottom":
+            self._bubble.toggle_input()
+            if self._bubble.state == "input":
+                try:
+                    win32gui.SetForegroundWindow(self._hwnd)
+                    win32gui.SetActiveWindow(self._hwnd)
+                    win32gui.SetFocus(self._hwnd)
+                except Exception:
+                    pass
+            self._update_display()
         elif self._on_action:
             self._on_action(zone)
 
@@ -495,7 +1098,16 @@ class PetWindow:
             pass
 
     def _get_current_mode(self) -> str:
-        # TODO: get current mode from player_proxy
+        """Read current play mode from the shared state file."""
+        try:
+            state_path = Path.home() / ".holle_music" / "pet_state.json"
+            if state_path.exists():
+                data = json.loads(state_path.read_text(encoding="utf-8"))
+                mode = data.get("mode", "sequential")
+                if mode in ("sequential", "random", "repeat"):
+                    return mode
+        except Exception:
+            pass
         return "sequential"
 
     def _get_next_mode(self, current: str) -> str:
@@ -508,6 +1120,8 @@ class PetWindow:
     def _show_context_menu(self) -> None:
         try:
             menu = win32gui.CreatePopupMenu()
+            if self._bubble.state == "response" and self._bubble.response_text:
+                win32gui.AppendMenu(menu, win32con.MF_STRING, 4, "Copy reply")
             win32gui.AppendMenu(menu, win32con.MF_STRING, 1, "Hide")
             win32gui.AppendMenu(menu, win32con.MF_STRING, 2, "Switch to Terminal")
             win32gui.AppendMenu(menu, win32con.MF_STRING, 3, "Quit")
@@ -529,22 +1143,48 @@ class PetWindow:
             elif cmd == 3:
                 self._running = False
                 win32gui.DestroyWindow(self._hwnd)
+            elif cmd == 4:
+                self._copy_to_clipboard(self._bubble.response_text)
         except Exception as e:
             print(f"[PET] Menu error: {e}")
 
+    def _copy_to_clipboard(self, text: str) -> None:
+        """Copy text to the Windows clipboard."""
+        try:
+            import win32clipboard
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(text, win32clipboard.CF_UNICODETEXT)
+            win32clipboard.CloseClipboard()
+        except Exception as e:
+            self._log_error(f"Clipboard error: {e}")
+
     def _switch_back_to_terminal(self) -> None:
-        """Close pet and launch terminal."""
+        """Close pet and return focus to the terminal if it is running."""
         self._save_position()
-        self._launch_terminal()
+        if self._is_terminal_running is not None and self._is_terminal_running():
+            self._bring_terminal_to_front()
         self.close()
 
-    def _launch_terminal(self) -> None:
-        subprocess.Popen(
-            [sys.executable, "-m", "holle_music"],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+    def _bring_terminal_to_front(self) -> None:
+        """Find the terminal window and bring it to the foreground."""
+        try:
+            handles: list[int] = []
+
+            def _enum(hwnd: int, _: object) -> bool:
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if title and "Holle Music" in title:
+                        handles.append(hwnd)
+                return True
+
+            win32gui.EnumWindows(_enum, None)
+            if handles:
+                hwnd = handles[0]
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
 
     # ── Position persistence ──────────────────────────────────────────────
 
@@ -566,7 +1206,7 @@ class PetWindow:
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             path.write_text(
-                json.dumps({"x": self._window_pos[0], "y": self._window_pos[1]}),
+                json.dumps({"x": self._mascot_pos[0], "y": self._mascot_pos[1]}),
                 encoding="utf-8",
             )
         except Exception:

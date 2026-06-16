@@ -15,7 +15,15 @@ class TestPetPlayer:
         assert player.mode in ("sequential", "random", "repeat")
         assert player.is_playing is False
 
-    def test_cycle_mode(self):
+    def test_cycle_mode(self, tmp_path, monkeypatch):
+        pet_dir = tmp_path / ".holle_music"
+        pet_dir.mkdir()
+        # Isolate from the real IPC directory so a leftover pet_state.json
+        # does not make _is_main_app_running() return True.
+        monkeypatch.setattr(
+            "holle_music.pet.player_proxy.PetPlayer._ipc_dir",
+            property(lambda self: pet_dir),
+        )
         player = PetPlayer()
         modes = []
         for _ in range(4):

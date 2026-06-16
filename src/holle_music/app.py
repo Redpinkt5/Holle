@@ -26,6 +26,7 @@ from holle_music.widgets import (
     get_shimmer_palette,
 )
 from holle_music.minimax_api import MiniMaxService
+from holle_music.settings import load_settings, set_setting
 
 
 class CommandType(Enum):
@@ -53,22 +54,37 @@ class Command:
 
 COMMAND_MAP: dict[str, CommandType] = {
     "/play": CommandType.PLAY,
+    "play": CommandType.PLAY,
     "/pause": CommandType.PAUSE,
+    "pause": CommandType.PAUSE,
     "/stop": CommandType.STOP,
+    "stop": CommandType.STOP,
     "/resume": CommandType.PLAY,
+    "resume": CommandType.PLAY,
     "/next": CommandType.NEXT,
+    "next": CommandType.NEXT,
     "/prev": CommandType.PREVIOUS,
+    "prev": CommandType.PREVIOUS,
     "/previous": CommandType.PREVIOUS,
+    "previous": CommandType.PREVIOUS,
     "/volume": CommandType.VOLUME,
+    "volume": CommandType.VOLUME,
     "/vol": CommandType.VOLUME,
     "/scan": CommandType.SCAN,
+    "scan": CommandType.SCAN,
     "/playlist": CommandType.PLAYLIST,
+    "playlist": CommandType.PLAYLIST,
     "/help": CommandType.HELP,
+    "help": CommandType.HELP,
     "/quit": CommandType.QUIT,
+    "quit": CommandType.QUIT,
     "/exit": CommandType.QUIT,
+    "exit": CommandType.QUIT,
     "/q": CommandType.QUIT,
     "/search": CommandType.SEARCH,
+    "search": CommandType.SEARCH,
     "/color": CommandType.COLOR,
+    "color": CommandType.COLOR,
 }
 
 
@@ -329,7 +345,8 @@ class HolleMusicApp(App):
         self._displayed_songs: list[Song] = []
         self._original_songs: list[Song] = []
         self._ai = MiniMaxService()
-        self._current_music_dir = "E:/Music"
+        self._current_music_dir = load_settings().get("music_dir", "E:/Music")
+        self.player.set_play_mode(load_settings().get("play_mode", "sequential"))
         self.player.on_song_change(self._on_song_changed)
 
     def compose(self) -> ComposeResult:
@@ -351,10 +368,15 @@ class HolleMusicApp(App):
         progress = self.query_one("#now-playing", NowPlaying).progress
         progress.set_on_seek(self._on_progress_seek)
         vol_bar = self.query_one("#visualizer", Visualizer).volume_bar
+        # Restore persisted volume, defaulting to 100%.
+        self.player.set_volume(load_settings().get("volume", 1.0))
         vol_bar.set_volume(self.player.volume)
         vol_bar.set_on_change(self._on_volume_change)
+        # Restore persisted play mode in the controls UI.
+        self.query_one("#controls", Controls).set_mode(self.player.play_mode)
         self.query_one("#command-input", CommandInput).set_prefix(self._current_music_dir)
         self._handle_command(Command(CommandType.SCAN))
+        self._restore_playback_state()
         self.set_interval(1.0, self._check_song_end)
         self.set_interval(0.25, self._update_progress)
         # IPC for desktop pet
@@ -363,15 +385,67 @@ class HolleMusicApp(App):
         self._pet_state_timer = self.set_interval(1.0, self._write_pet_state)
         self._pet_cmd_timer = self.set_interval(0.5, self._read_pet_cmd)
 
+    def on_unmount(self) -> None:
+        """Persist the last playback position and current song on exit."""
+        self._save_playback_state()
+
+    def _save_playback_state(self) -> None:
+        """Persist the last current song."""
+        song = self.player.current_song
+        if song:
+            set_setting("current_song_path", str(song.path))
+            set_setting("current_song_title", song.title)
+        else:
+            set_setting("current_song_path", "")
+            set_setting("current_song_title", "")
+        set_setting("play_mode", self.player.play_mode)
+
+    def _restore_playback_state(self) -> None:
+        """Restore the last current song without auto-playing."""
+        settings = load_settings()
+        saved_path = settings.get("current_song_path", "")
+        saved_title = settings.get("current_song_title", "")
+        if not saved_path:
+            return
+        playlist = self.player.playlist
+        if not playlist:
+            return
+        target_path = Path(saved_path)
+        for i, song in enumerate(playlist):
+            if song.path == target_path or song.title == saved_title:
+                self.player._current_index = i
+                self._sync_playlist_selection()
+                self.player._notify_song_change()
+                self._update_controls_ui()
+                break
+
     # ── IPC for desktop pet ─────────────────────────────────────────
 
     def _write_pet_state(self) -> None:
         import json, time
         song = self.player.current_song
+        playlist = self.player.playlist
+        cur_idx = self.player.current_index
+        next_songs = []
+        if playlist:
+            for i in range(10):
+                idx = (cur_idx + 1 + i) % len(playlist)
+                s = playlist[idx]
+                next_songs.append({"title": s.title, "artist": s.artist})
+        settings = load_settings()
         state = {
             "playing": self.player.is_playing,
-            "song": {"title": song.title, "artist": song.artist} if song else None,
+            "song": {"title": song.title, "artist": song.artist, "path": str(song.path)} if song else None,
             "mode": self.player.play_mode,
+            "volume": int(self.player.volume * 100),
+            "current_index": cur_idx,
+            "next_songs": next_songs,
+            "playlist": [
+                {"title": s.title, "artist": s.artist, "path": str(s.path)}
+                for s in playlist
+            ],
+            "color": get_shimmer_palette(),
+            "main_color": settings.get("main_color", "light"),
             "time": time.time(),
         }
         try:
@@ -427,10 +501,12 @@ class HolleMusicApp(App):
             elif cmd == "volume_up":
                 new_vol = min(1.0, self.player.volume + 0.02)
                 self.player.set_volume(new_vol)
+                set_setting("volume", new_vol)
                 self.query_one("#visualizer", Visualizer).volume_bar.set_volume(new_vol)
             elif cmd == "volume_down":
                 new_vol = max(0.0, self.player.volume - 0.02)
                 self.player.set_volume(new_vol)
+                set_setting("volume", new_vol)
                 self.query_one("#visualizer", Visualizer).volume_bar.set_volume(new_vol)
             elif cmd.startswith("play:"):
                 title = cmd[5:]
@@ -439,14 +515,35 @@ class HolleMusicApp(App):
                 try:
                     vol = int(cmd[7:]) / 100
                     self.player.set_volume(vol)
+                    set_setting("volume", vol)
                     self.query_one("#visualizer", Visualizer).volume_bar.set_volume(vol)
                     self._notify_chat(f"音量: {int(vol * 100)}%")
                 except ValueError:
                     pass
+            elif cmd.startswith("color:"):
+                name = cmd[6:].strip().lower()
+                if set_shimmer_palette(name):
+                    set_setting("color", name)
+                    try:
+                        self.query_one("#chat-bubbles", ChatBubbles).refresh()
+                    except Exception:
+                        pass
+                    try:
+                        self.query_one("#controls", Controls)._update_mode_buttons()
+                    except Exception:
+                        pass
+                    self._notify_chat(f"闪烁颜色已切换为: {name}")
+            elif cmd.startswith("maincolor:"):
+                name = cmd[10:].strip().lower()
+                if name in ("light", "dark"):
+                    set_setting("main_color", name)
+                    self._notify_chat(f"主颜色已切换为: {name}")
             elif cmd.startswith("mode:"):
                 mode = cmd[5:]
                 if mode in ("sequential", "random", "repeat"):
                     self.player.set_play_mode(mode)
+                    set_setting("play_mode", mode)
+                    self.query_one("#controls", Controls).set_mode(mode)
                     self._notify_chat(f"模式已切换为: {mode}")
             path.unlink(missing_ok=True)
         except Exception:
@@ -504,6 +601,9 @@ class HolleMusicApp(App):
         elif next_mode == "repeat":
             panel.border_title = "✻ Playlist ⟳"
             self._notify_chat("单曲循环模式已开启")
+        # Persist play mode and update pet state immediately.
+        set_setting("play_mode", next_mode)
+        self._write_pet_state()
 
     # ── Song change ─────────────────────────────────────────────────
 
@@ -513,6 +613,8 @@ class HolleMusicApp(App):
         np_widget = self.query_one("#now-playing", NowPlaying)
         np_widget.set_song(song)
         self._query_song_background(song)
+        # Update pet state immediately so the desktop pet sees the current song.
+        self._write_pet_state()
 
     def _query_song_background(self, song: Song) -> None:
         prompt = (
@@ -554,6 +656,7 @@ class HolleMusicApp(App):
 
     def _on_volume_change(self, vol: float) -> None:
         self.player.set_volume(vol)
+        set_setting("volume", vol)
 
     # ── Song end detection ──────────────────────────────────────────
 
@@ -598,10 +701,14 @@ class HolleMusicApp(App):
             return
         idx = event.control.index
         songs = self._displayed_songs or self.player.playlist
-        if idx is not None and 0 <= idx < len(songs):
-            song = songs[idx]
-            self.player.play(song)
-            self._update_controls_ui()
+        if idx is None or not (0 <= idx < len(songs)):
+            return
+        # Only start playback when the user explicitly selects a different song.
+        if idx == self.player.current_index:
+            return
+        song = songs[idx]
+        self.player.play(song)
+        self._update_controls_ui()
 
     # ── Mascot / Controls handlers ────────────────────────────────────
 
@@ -612,6 +719,8 @@ class HolleMusicApp(App):
             self.action_toggle_play_pause()
         elif event.zone == "next":
             self.action_next_track()
+        elif event.zone == "mode":
+            self._cycle_play_mode()
         self._update_controls_ui()
 
     def on_controls_prev_next(self, event) -> None:
@@ -658,27 +767,52 @@ class HolleMusicApp(App):
         elif mode == "repeat":
             panel.border_title = "✻ Playlist ⟳"
             self._notify_chat("单曲循环模式已开启")
+        # Persist play mode and update pet state immediately.
+        set_setting("play_mode", mode)
+        self._write_pet_state()
 
     @on(Controls.PetLaunch)
     def on_controls_pet_launch(self, event: Controls.PetLaunch) -> None:
-        """Save full state, launch desktop pet as independent process, and exit terminal."""
+        """Save full state, launch desktop pet, and hide the terminal window.
+
+        The terminal app keeps running in the background so music continues
+        playing; the desktop pet controls it via IPC and can bring the
+        terminal back with a middle-click.
+        """
         import subprocess, sys
 
         # Save complete playback state for the pet
         self._write_full_pet_state()
 
-        # Launch pet as independent process
+        # Launch pet as a background GUI process without showing a console window.
         try:
+            kwargs: dict = {}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             subprocess.Popen(
-                [sys.executable, "-m", "holle_music.pet.window"],
-                creationflags=subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0,
+                [sys.executable, "-m", "holle_music.pet.main"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                **kwargs,
             )
         except Exception as e:
             self._notify_chat(f"桌宠启动失败: {e}")
             return
 
-        self._notify_chat("🐾 桌宠已启动，终端即将退出")
-        self.exit()
+        # Minimize/hide the terminal window instead of exiting so playback
+        # continues seamlessly. The pet can restore it via middle-click.
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+            if hwnd:
+                ctypes.windll.user32.ShowWindow(hwnd, wintypes.INT(6))  # SW_MINIMIZE
+        except Exception:
+            pass
+
+        self._notify_chat(" ◆ 桌宠已启动，终端已最小化")
 
     def on_mouse_move(self, event) -> None:
         self.query_one("#controls", Controls).update_mouse(
@@ -757,14 +891,16 @@ class HolleMusicApp(App):
             try:
                 vol = int(cmd.args) / 100
                 self.player.set_volume(vol)
+                set_setting("volume", vol)
                 self.query_one("#visualizer", Visualizer).volume_bar.set_volume(vol)
                 self._notify_chat(f"音量: {int(vol * 100)}%")
             except ValueError:
                 self._notify_chat("用法: /volume <0-100>")
         elif cmd.type == CommandType.SCAN:
-            path = Path(cmd.args) if cmd.args else Path("E:/Music")
+            path = Path(cmd.args) if cmd.args else Path(self._current_music_dir)
             if path.exists():
                 self._current_music_dir = str(path.resolve())
+                set_setting("music_dir", self._current_music_dir)
                 self.query_one("#command-input", CommandInput).set_prefix(self._current_music_dir)
                 playlist = self.scanner.scan_to_playlist(path, name=path.name)
                 name = playlist.name
@@ -852,22 +988,10 @@ class HolleMusicApp(App):
             self._notify_chat(f'未找到 "{query}"')
 
     def _save_color_setting(self, name: str) -> None:
-        import json
-        try:
-            cfg = Path(__file__).parent / ".holle_color.json"
-            cfg.write_text(json.dumps({"color": name}))
-        except Exception:
-            pass
+        set_setting("color", name)
 
     def _load_color_setting(self) -> None:
-        import json
-        try:
-            cfg = Path(__file__).parent / ".holle_color.json"
-            if cfg.exists():
-                data = json.loads(cfg.read_text())
-                set_shimmer_palette(data.get("color", "pink"))
-        except Exception:
-            pass
+        set_shimmer_palette(load_settings().get("color", "pink"))
 
     def _restore_playlist_display(self) -> None:
         songs = self._original_songs or self.player.playlist

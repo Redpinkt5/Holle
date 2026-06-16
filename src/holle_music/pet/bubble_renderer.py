@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import io
 from PIL import Image, ImageDraw, ImageFont
+
+from holle_music.widgets import _SHIMMER_PALETTES, get_shimmer_palette
 
 
 # ── Visual constants ──────────────────────────────────────────────────────────
@@ -17,13 +20,21 @@ PADDING = 14                       # 内边距
 LINE_SPACING = 4                   # 行间距
 BUTTON_HEIGHT = 28                 # 按钮高度
 BUTTON_RADIUS = 6                  # 按钮圆角
-BUBBLE_RADIUS = 12                 # 气泡圆角
+BUBBLE_RADIUS = 0                  # 气泡圆角（0 为直角）
 FONT_SIZE = 13                     # 默认字体大小
 CHAR_WIDTH_EST = 7                 # 每字符估算宽度（px）
 
 
 class BubbleRenderer:
     """Render mode-switch and chat bubbles as RGBA images for Win32 layered windows."""
+
+    # Font preference lists. Different character classes need different fonts
+    # because no single Windows system font covers Latin, CJK and color emoji.
+    _NORMAL_FONT_NAMES = ("msyh.ttc", "msyh.ttf", "simhei.ttf", "arial.ttf", "segoeui.ttf")
+    _EMOJI_FONT_NAMES = ("seguiemj.ttf", "segoeuiemoji.ttf", "NotoColorEmoji.ttf")
+
+    # Per-size font cache to avoid reloading fonts every render.
+    _FONT_CACHE: dict[tuple[str, int], ImageFont.FreeTypeFont | ImageFont.ImageFont] = {}
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -151,6 +162,290 @@ class BubbleRenderer:
 
         return img
 
+    def render_input_bubble(
+        self,
+        text: str,
+        cursor_visible: bool = True,
+        height: int = 40,
+        max_width: int = 320,
+        min_width: int = 120,
+    ) -> Image.Image:
+        """Render a single-line input bubble with a cursor.
+
+        The bubble width grows with the text up to ``max_width``.
+        The cursor color follows the current shimmer palette.
+
+        Args:
+            text: Current input text.
+            cursor_visible: Whether to draw the text cursor.
+            height: Bubble height in pixels.
+            max_width: Maximum bubble width in pixels.
+            min_width: Minimum bubble width in pixels.
+
+        Returns:
+            RGBA Image with rounded black background, white text and colored cursor.
+        """
+        font = self._get_font(FONT_SIZE)
+        hint = "/help查看帮助"
+        display_text = text if text else hint
+        text_w = self._text_width_mixed(display_text, FONT_SIZE)
+        width = max(min_width, min(max_width, text_w + PADDING * 2 + 16))
+
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        self._draw_rounded_rect(draw, (0, 0, width, height), BUBBLE_RADIUS, (0, 0, 0, 240))
+
+        x = PADDING
+        y = (height - FONT_SIZE) // 2
+        if text:
+            drawn_w = self._draw_text_mixed(draw, (x, y), text, FONT_SIZE, TEXT_COLOR)
+        else:
+            # Show a placeholder hint when the input is empty.
+            self._draw_text_mixed(
+                draw, (x, y), hint, FONT_SIZE, (180, 180, 180)
+            )
+            drawn_w = 0
+
+        if cursor_visible:
+            cursor_x = x + drawn_w + 1
+            cursor_top = y - 2
+            cursor_bottom = y + FONT_SIZE + 2
+            draw.line(
+                [(cursor_x, cursor_top), (cursor_x, cursor_bottom)],
+                fill=self._cursor_color(),
+                width=2,
+            )
+
+        return img
+
+    @staticmethod
+    def _cursor_color() -> tuple[int, int, int]:
+        """Return the current shimmer palette color as an RGB tuple."""
+        name = get_shimmer_palette()
+        hex_color = _SHIMMER_PALETTES.get(name, _SHIMMER_PALETTES["pink"])[0]
+        hex_color = hex_color.lstrip("#")
+        return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+
+    def render_response_bubble(
+        self,
+        text: str,
+        cover_image: Image.Image | None = None,
+        max_width: int = 280,
+        min_width: int = 80,
+    ) -> Image.Image:
+        """Render a multi-line response bubble with optional cover art.
+
+        The bubble width and height are calculated from the rendered text so that
+        short replies stay compact and long replies fill up to ``max_width``.
+        The style matches the input bubble: rounded black rectangle, no arrow.
+
+        Args:
+            text: Response text to display.
+            cover_image: Optional RGBA cover image to show above the text.
+            max_width: Maximum bubble width in pixels.
+            min_width: Minimum bubble width in pixels.
+
+        Returns:
+            RGBA Image with rounded black background and wrapped text.
+        """
+        # Wrap once at the maximum allowed text width using mixed fonts.
+        # Preserve explicit line breaks from the caller (e.g. playlist formatting).
+        raw_lines = text.split("\n")
+        wrapped: list[str] = []
+        for raw in raw_lines:
+            wrapped.extend(self._wrap_text_by_width(raw, FONT_SIZE, max_width - PADDING * 2))
+        if not wrapped:
+            wrapped = [text]
+
+        # Determine the actual width needed for the wrapped lines.
+        line_widths = [self._text_width_mixed(line, FONT_SIZE) for line in wrapped]
+        content_w = max(line_widths) if line_widths else 0
+        width = max(min_width, min(max_width, content_w + PADDING * 2))
+
+        # Re-wrap to the chosen width so the text definitely fits.
+        final_w = width - PADDING * 2
+        wrapped = self._wrap_text_by_width(text, FONT_SIZE, final_w)
+        line_widths = [self._text_width_mixed(line, FONT_SIZE) for line in wrapped]
+        content_w = max(line_widths) if line_widths else 0
+        # Tighten width if the re-wrapped text is narrower.
+        width = max(min_width, min(width, content_w + PADDING * 2))
+
+        # Scale cover art to match bubble width and compute its layout space.
+        cover_w = 0
+        cover_h = 0
+        cover_scaled: Image.Image | None = None
+        if cover_image is not None:
+            cover_w = width - PADDING * 2
+            cover_h = int(cover_w * cover_image.height / cover_image.width)
+            cover_scaled = cover_image.resize((cover_w, cover_h), Image.Resampling.LANCZOS)
+            width = max(width, cover_w + PADDING * 2)
+
+        line_h = FONT_SIZE + LINE_SPACING
+        content_h = len(wrapped) * line_h
+        text_top = (cover_h + PADDING) if cover_image else 0
+        height = content_h + text_top + PADDING * 2
+
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        # Solid black to match the input bubble style.
+        response_bg = (0, 0, 0, 240)
+        self._draw_rounded_rect(draw, (0, 0, width, height), BUBBLE_RADIUS, response_bg)
+
+        # Paste cover art centered at the top, scaled to match bubble width.
+        if cover_scaled is not None:
+            cx = (width - cover_w) // 2
+            img.paste(cover_scaled, (cx, PADDING), cover_scaled)
+
+        y = PADDING + text_top
+        for line in wrapped:
+            self._draw_text_mixed(draw, (PADDING, y), line, FONT_SIZE, TEXT_COLOR)
+            y += line_h
+
+        return img
+
+    def render_loading_bubble(
+        self,
+        frame: int = 0,
+        overlay: str | None = None,
+        height: int = 50,
+    ) -> Image.Image:
+        """Render a loading/thinking bubble with animated dots.
+
+        Args:
+            frame: Animation frame (0-2) controlling the number of dots.
+            overlay: Optional status text shown below the dots (e.g. mode switch).
+            height: Minimum bubble height in pixels.
+
+        Returns:
+            RGBA Image with rounded black background and wrapped text.
+        """
+        dots = "." * ((frame % 3) + 1)
+        text = f"思考中{dots}"
+
+        font = self._get_font(FONT_SIZE)
+        text_w = self._text_width(text, font)
+
+        overlay_lines: list[str] = []
+        if overlay:
+            overlay_lines = self._wrap_text_by_width(
+                overlay, FONT_SIZE, 260
+            )
+
+        overlay_w = max(
+            (self._text_width_mixed(line, FONT_SIZE) for line in overlay_lines),
+            default=0,
+        )
+        width = max(90, text_w + PADDING * 2, overlay_w + PADDING * 2)
+
+        line_h = FONT_SIZE + LINE_SPACING
+        content_h = line_h
+        if overlay_lines:
+            content_h += len(overlay_lines) * line_h
+        height = max(height, content_h + PADDING * 2)
+
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        bg = (0, 0, 0, 240)
+        self._draw_rounded_rect(draw, (0, 0, width, height), BUBBLE_RADIUS, bg)
+
+        x = (width - text_w) // 2
+        y = PADDING
+        draw.text((x, y), text, fill=TEXT_COLOR, font=font)
+
+        if overlay_lines:
+            y += line_h
+            for line in overlay_lines:
+                line_w = self._text_width_mixed(line, FONT_SIZE)
+                x = (width - line_w) // 2
+                self._draw_text_mixed(draw, (x, y), line, FONT_SIZE, TEXT_COLOR)
+                y += line_h
+
+        return img
+
+    def render_mode_picker(
+        self,
+        current_mode: str,
+        width: int = 180,
+        height: int = 60,
+    ) -> Image.Image:
+        """Render the play-mode picker with three white square buttons.
+
+        Args:
+            current_mode: One of "sequential", "random", "repeat".
+            width: Bubble width in pixels.
+            height: Bubble height in pixels.
+
+        Returns:
+            RGBA Image with black rounded background and three mode squares.
+        """
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        self._draw_rounded_rect(draw, (0, 0, width, height), BUBBLE_RADIUS, (0, 0, 0, 240))
+
+        modes = [
+            ("sequential", "顺序"),
+            ("random", "随机"),
+            ("repeat", "循环"),
+        ]
+        sq = 40
+        total_content = sq * 3
+        remaining = width - total_content - PADDING * 2
+        gap = remaining // 2
+        y = (height - sq) // 2
+        label_font = self._get_font(11)
+
+        for i, (mode, label) in enumerate(modes):
+            x = PADDING + i * (sq + gap)
+            draw.rectangle([x, y, x + sq, y + sq], fill=(255, 255, 255, 255))
+            if mode == current_mode:
+                draw.rectangle(
+                    [x - 2, y - 2, x + sq + 2, y + sq + 2],
+                    outline=ACCENT_COLOR,
+                    width=2,
+                )
+            tw = self._text_width(label, label_font)
+            th = 11
+            draw.text(
+                (x + (sq - tw) // 2, y + (sq - th) // 2),
+                label,
+                fill=(20, 20, 20, 255),
+                font=label_font,
+            )
+
+        return img
+
+    @staticmethod
+    def extract_cover_image(path: str, size: tuple[int, int] = (100, 100)) -> Image.Image | None:
+        """Extract album cover from an audio file and return a resized RGBA image.
+
+        Returns None if no cover art is found or extraction fails.
+        """
+        try:
+            from mutagen import File as MutagenFile
+
+            audio = MutagenFile(path)
+            if audio is None:
+                return None
+            data = None
+            if hasattr(audio, "pictures") and audio.pictures:
+                data = audio.pictures[0].data
+            if not data and hasattr(audio, "tags"):
+                for tag in audio.tags.values():
+                    if getattr(tag, "FrameID", "") == "APIC":
+                        data = tag.data
+                        break
+            if not data:
+                return None
+            img = Image.open(io.BytesIO(data)).convert("RGBA")
+            img = img.resize(size, Image.Resampling.LANCZOS)
+            return img
+        except Exception:
+            return None
+
     # ── Drawing helpers ───────────────────────────────────────────────────────
 
     @staticmethod
@@ -214,17 +509,190 @@ class BubbleRenderer:
             lines.append(current)
         return lines if lines else [text]
 
+    def _wrap_text_by_width(
+        self,
+        text: str,
+        size: int,
+        max_width: int,
+    ) -> list[str]:
+        """Wrap text using actual font metrics, supporting mixed CJK/emoji/Latin.
+
+        CJK characters and emoji are treated as individual tokens so Chinese and
+        emoji sequences wrap correctly; Latin words are kept whole when they fit.
+        """
+        import re
+
+        # CJK ranges + Hangul syllables + emoji blocks.
+        # Each CJK char and each emoji becomes its own token; Latin words stay together.
+        tokens = re.findall(
+            r"[\U0001F300-\U0001FAFF]|"
+            r"[一-鿿぀-ゟ゠-ヿ가-힯]|"
+            r"\S+|\s+",
+            text,
+            re.UNICODE,
+        )
+
+        lines: list[str] = []
+        current = ""
+        current_width = 0
+
+        for token in tokens:
+            # Collapse whitespace between words.
+            if token.isspace():
+                if current:
+                    current += " "
+                    current_width = self._text_width_mixed(current, size)
+                continue
+
+            test = current + token if current else token
+            test_w = self._text_width_mixed(test, size)
+
+            if test_w <= max_width:
+                current = test
+                current_width = test_w
+            else:
+                if current:
+                    lines.append(current.strip())
+                current = token
+                current_width = self._text_width_mixed(token, size)
+
+        if current:
+            lines.append(current.strip())
+
+        return lines if lines else [text]
+
     # ── Font helpers ──────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _get_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-        """Return a TrueType font if available, else default bitmap font."""
-        for name in ("msyh.ttc", "msyh.ttf", "simhei.ttf", "arial.ttf", "segoeui.ttf"):
+    def _get_font(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        """Return the normal UI font (CJK + Latin)."""
+        return self._load_font(self._NORMAL_FONT_NAMES, size)
+
+    def _get_emoji_font(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        """Return the emoji font, falling back to the normal font."""
+        try:
+            return self._load_font(self._EMOJI_FONT_NAMES, size)
+        except Exception:
+            return self._get_font(size)
+
+    def _load_font(
+        self,
+        names: tuple[str, ...],
+        size: int,
+    ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        """Load and cache a font by name list + size."""
+        for name in names:
+            key = (name, size)
+            if key in self._FONT_CACHE:
+                return self._FONT_CACHE[key]
             try:
-                return ImageFont.truetype(name, size)
+                font = ImageFont.truetype(name, size)
+                self._FONT_CACHE[key] = font
+                return font
             except Exception:
                 continue
         return ImageFont.load_default()
+
+    def _font_for_char(
+        self,
+        char: str,
+        size: int,
+    ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        """Pick a font that is most likely to render ``char`` correctly."""
+        if self._is_emoji_char(char):
+            return self._get_emoji_font(size)
+        return self._get_font(size)
+
+    @staticmethod
+    def _is_emoji_char(char: str) -> bool:
+        """Return True if ``char`` is an emoji or emoji modifier."""
+        if not char:
+            return False
+        cp = ord(char)
+        # Common emoji blocks and symbol ranges.
+        if (
+            0x1F300 <= cp <= 0x1F5FF
+            or 0x1F600 <= cp <= 0x1F64F
+            or 0x1F680 <= cp <= 0x1F6FF
+            or 0x1F700 <= cp <= 0x1F77F
+            or 0x1F780 <= cp <= 0x1F7FF
+            or 0x1F800 <= cp <= 0x1F8FF
+            or 0x1F900 <= cp <= 0x1F9FF
+            or 0x1FA00 <= cp <= 0x1FA6F
+            or 0x1FA70 <= cp <= 0x1FAFF
+            or 0x2600 <= cp <= 0x26FF
+            or 0x2700 <= cp <= 0x27BF
+            or 0x2300 <= cp <= 0x23FF
+            or cp in (0x2764, 0x2B50, 0x2B55, 0x2615, 0x26A1)
+        ):
+            return True
+        # Emoji modifiers: skin tones, variation selectors, ZWJ, keycap base.
+        if 0x1F3FB <= cp <= 0x1F3FF or cp in (0xFE0E, 0xFE0F, 0x200D, 0x20E3):
+            return True
+        return False
+
+    def _segment_by_font(
+        self,
+        text: str,
+        size: int,
+    ) -> list[tuple[str, ImageFont.FreeTypeFont | ImageFont.ImageFont]]:
+        """Split text into consecutive runs using the same font."""
+        if not text:
+            return [("", self._get_font(size))]
+        segments: list[tuple[str, ImageFont.FreeTypeFont | ImageFont.ImageFont]] = []
+        current = ""
+        current_font: ImageFont.FreeTypeFont | ImageFont.ImageFont | None = None
+        for char in text:
+            font = self._font_for_char(char, size)
+            if current_font is None:
+                current = char
+                current_font = font
+            elif font is current_font:
+                current += char
+            else:
+                segments.append((current, current_font))
+                current = char
+                current_font = font
+        if current and current_font is not None:
+            segments.append((current, current_font))
+        return segments
+
+    def _text_width_mixed(self, text: str, size: int) -> int:
+        """Measure width of text that may contain emoji."""
+        width = 0
+        for seg_text, seg_font in self._segment_by_font(text, size):
+            width += self._text_width(seg_text, seg_font)
+        return width
+
+    def _draw_text_mixed(
+        self,
+        draw: ImageDraw.Draw,
+        xy: tuple[int, int],
+        text: str,
+        size: int,
+        fill: tuple[int, ...],
+    ) -> int:
+        """Draw mixed-language/emoji text, returning the pixel width drawn."""
+        x, y = xy
+        total_w = 0
+        for seg_text, seg_font in self._segment_by_font(text, size):
+            draw.text((x, y), seg_text, fill=fill, font=seg_font)
+            seg_w = self._text_width(seg_text, seg_font)
+            x += seg_w
+            total_w += seg_w
+        return total_w
+
+    def _truncate_line(self, text: str, max_width: int, size: int = FONT_SIZE) -> str:
+        """Return text truncated with '...' if it exceeds max_width."""
+        if self._text_width_mixed(text, size) <= max_width:
+            return text
+        suffix = "..."
+        suffix_w = self._text_width_mixed(suffix, size)
+        available = max_width - suffix_w
+        if available <= 0:
+            return text[: max(1, len(text) // 2)] + suffix
+        while text and self._text_width_mixed(text, size) > available:
+            text = text[:-1]
+        return text + suffix
 
     @staticmethod
     def _text_width(text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont) -> int:
