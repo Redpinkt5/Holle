@@ -140,6 +140,7 @@ def _start_shimmer(widget: Static, offset: int = 0) -> None:
     """Cycle border color + sparkle prefix with per-widget offset."""
     if getattr(widget, "_shimmer_timer", None) is not None:
         return
+    widget._shimmer_offset = offset
     base_title: str = getattr(widget, "_shimmer_base_title", widget.BORDER_TITLE)
     idx = [0]
 
@@ -167,6 +168,19 @@ def _stop_shimmer(widget: Static) -> None:
     base_title: str = getattr(widget, "_shimmer_base_title", widget.BORDER_TITLE)
     widget.border_title = f"✻ {base_title}"
     widget.styles.border = ("solid", "white")
+
+
+def restart_active_shimmers(screen) -> None:
+    """Restart shimmer timers on all widgets so they pick up a new palette immediately."""
+    try:
+        for widget in screen.query(Static):
+            if getattr(widget, "_shimmer_timer", None) is not None:
+                _stop_shimmer(widget)
+                # Re-start with same offset if the widget has one.
+                offset = getattr(widget, "_shimmer_offset", 0)
+                _start_shimmer(widget, offset=offset)
+    except Exception:
+        pass
 
 
 def _extract_cover(path: str) -> str:

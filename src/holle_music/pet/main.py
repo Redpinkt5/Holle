@@ -175,6 +175,8 @@ def main() -> None:
                 window.set_main_color(main_color)
         except Exception:
             pass
+        # When running standalone, write our state back so the terminal can resume.
+        player.write_state()
 
     window.set_settings_sync(sync_settings_from_terminal)
 

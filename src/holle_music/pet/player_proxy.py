@@ -259,6 +259,37 @@ class PetPlayer:
         except Exception:
             return False
 
+    def write_state(self) -> None:
+        """Write the standalone player's current state to pet_state.json.
+
+        This is used when the desktop assistant is running on its own so that
+        the terminal app can resume at the same song/position later.
+        """
+        if self._is_main_app_running() or self._standalone_player is None:
+            return
+        try:
+            song_obj = self._standalone_player.current_song
+            song = {"title": song_obj.title, "artist": song_obj.artist, "path": str(song_obj.path)} if song_obj else None
+            playlist = self._standalone_player.playlist
+            state = {
+                "playing": self._standalone_player.is_playing,
+                "song": song,
+                "mode": self._standalone_player.play_mode,
+                "volume": int(self._standalone_player.volume * 100),
+                "current_index": self._standalone_player.current_index,
+                "position": self._standalone_player.get_playback_position_ms() / 1000.0,
+                "playlist": [
+                    {"title": s.title, "artist": s.artist, "path": str(s.path)}
+                    for s in playlist
+                ],
+                "time": time.time(),
+            }
+            self._ipc_dir.mkdir(parents=True, exist_ok=True)
+            with open(self._state_file, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False)
+        except Exception:
+            pass
+
     def _send_cmd(self, cmd: str) -> None:
         self._ipc_dir.mkdir(parents=True, exist_ok=True)
         payload = {"cmd": cmd, "time": int(time.time())}

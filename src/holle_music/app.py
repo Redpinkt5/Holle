@@ -24,6 +24,7 @@ from holle_music.widgets import (
     ChatBubbles,
     set_shimmer_palette,
     get_shimmer_palette,
+    restart_active_shimmers,
 )
 from holle_music.minimax_api import MiniMaxService
 from holle_music.settings import load_settings, set_setting
@@ -401,22 +402,49 @@ class HolleMusicApp(App):
         set_setting("play_mode", self.player.play_mode)
 
     def _restore_playback_state(self) -> None:
-        """Restore the last current song without auto-playing."""
+        """Restore the last current song and position without auto-playing.
+
+        Prefer the shared pet_state.json if it is newer than the local settings
+        (e.g. the desktop assistant was used while the terminal was closed).
+        """
+        import json
+
         settings = load_settings()
         saved_path = settings.get("current_song_path", "")
         saved_title = settings.get("current_song_title", "")
-        if not saved_path:
+        saved_position = 0.0
+
+        pet_state_path = Path.home() / ".holle_music" / "pet_state.json"
+        if pet_state_path.exists():
+            try:
+                pet_state = json.loads(pet_state_path.read_text(encoding="utf-8"))
+                pet_song = pet_state.get("song") or {}
+                pet_path = pet_song.get("path", "")
+                pet_title = pet_song.get("title", "")
+                if pet_path or pet_title:
+                    saved_path = pet_path
+                    saved_title = pet_title
+                    saved_position = pet_state.get("position", 0.0) or 0.0
+            except Exception:
+                pass
+
+        if not saved_path and not saved_title:
             return
         playlist = self.player.playlist
         if not playlist:
             return
-        target_path = Path(saved_path)
+        target_path = Path(saved_path) if saved_path else None
         for i, song in enumerate(playlist):
-            if song.path == target_path or song.title == saved_title:
+            if (target_path and song.path == target_path) or song.title == saved_title:
                 self.player._current_index = i
                 self._sync_playlist_selection()
                 self.player._notify_song_change()
                 self._update_controls_ui()
+                if saved_position > 0:
+                    try:
+                        self.player.seek(saved_position)
+                    except Exception:
+                        pass
                 break
 
     # ── IPC for desktop pet ─────────────────────────────────────────
@@ -439,6 +467,7 @@ class HolleMusicApp(App):
             "mode": self.player.play_mode,
             "volume": int(self.player.volume * 100),
             "current_index": cur_idx,
+            "position": self.player.get_playback_position_ms() / 1000.0,
             "next_songs": next_songs,
             "playlist": [
                 {"title": s.title, "artist": s.artist, "path": str(s.path)}
@@ -490,12 +519,15 @@ class HolleMusicApp(App):
             if cmd == "toggle":
                 self.player.toggle_play_pause()
                 self._update_controls_ui()
+                self._sync_playlist_selection()
             elif cmd == "next":
                 self.player.next()
                 self._sync_playlist_selection()
+                self._update_controls_ui()
             elif cmd == "prev":
                 self.player.previous()
                 self._sync_playlist_selection()
+                self._update_controls_ui()
             elif cmd == "mode":
                 self._cycle_play_mode()
             elif cmd == "volume_up":
@@ -530,6 +562,11 @@ class HolleMusicApp(App):
                         pass
                     try:
                         self.query_one("#controls", Controls)._update_mode_buttons()
+                    except Exception:
+                        pass
+                    try:
+                        restart_active_shimmers(self.screen)
+                        self.screen.refresh()
                     except Exception:
                         pass
                     self._notify_chat(f"闪烁颜色已切换为: {name}")
@@ -941,6 +978,11 @@ class HolleMusicApp(App):
                     pass
                 try:
                     self.query_one("#controls", Controls)._update_mode_buttons()
+                except Exception:
+                    pass
+                try:
+                    restart_active_shimmers(self.screen)
+                    self.screen.refresh()
                 except Exception:
                     pass
                 self._notify_chat(f"闪烁颜色已切换为: {name}")
