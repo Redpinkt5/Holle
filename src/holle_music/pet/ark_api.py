@@ -17,7 +17,7 @@ from holle_music.pet import deepseek_api
 
 
 # ── API configuration ──────────────────────────────────────────────────
-ARK_API_KEY = os.environ.get("ARK_API_KEY", "ark-db484784-7488-4eb4-8cb5-74d69c07a9f4-20b6a")
+ARK_API_KEY = os.environ.get("ARK_API_KEY", "")
 ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 ARK_MODEL = "deepseek-v4-flash-260425"
 
