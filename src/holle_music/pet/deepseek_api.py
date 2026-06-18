@@ -5,11 +5,12 @@ Uses OpenAI-compatible endpoint. Auto-installs openai package if missing.
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
 # ── API configuration ──────────────────────────────────────────────────
-DEEPSEEK_API_KEY = "sk-cd27a7afd2984405a7bb441d35b99522"
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_MODEL = "deepseek-chat"
 
@@ -231,7 +232,7 @@ class DeepSeekService:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.api_key and self.api_key != "your_api_key_here")
+        return bool(self.api_key)
 
     # ── Retry ───────────────────────────────────────────────────────
 

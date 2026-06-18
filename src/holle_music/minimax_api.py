@@ -14,7 +14,7 @@ import wave
 from typing import Callable
 
 # ── User configuration ─────────────────────────────────────────────────
-MINIMAX_API_KEY = "sk-cp-_uO2Wct_teSKyKT0gnhClYLdZukYFyTIo7jD4UO-Kt1FkzvdAP6Ek4cEAkJPBGn__C5P2-7tNXWNo_ugp8wymJqfeadXbpVLlN1KdloSVX1lbRUU5j8xC0w"
+MINIMAX_API_KEY = os.environ.get("MINIMAX_API_KEY", "")
 MINIMAX_BASE_URL = "https://api.minimaxi.com/v1"
 MINIMAX_MODEL = "minimax-text-01"  # 根据你的 API 套餐更换模型名
 
@@ -140,7 +140,7 @@ class MiniMaxService:
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.api_key and self.api_key != "your_api_key_here")
+        return bool(self.api_key)
 
     # ── Retry ───────────────────────────────────────────────────────
 

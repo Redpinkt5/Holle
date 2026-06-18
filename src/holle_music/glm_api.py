@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Callable
 
-API_KEY = "sk-euyxygiqdyqujscdnxhqcasfvfpmncipzawbzneyjaesnpie"
+API_KEY = os.environ.get("SILICONFLOW_API_KEY", "")
 BASE_URL = "https://api.siliconflow.cn/v1/"
 MODEL = "THUDM/GLM-Z1-9B-0414"
 
