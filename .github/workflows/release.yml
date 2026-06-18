@@ -116,16 +116,19 @@ jobs:
 
           platform = "${{ matrix.name }}"
           if platform == "windows":
+              shortcut_script = Path("scripts/create-desktop-shortcuts.ps1")
               for name in ["hollemusic.exe", "hollepet.exe"]:
                   src = dist_dir / name
                   if src.exists():
                       # Raw .exe
                       exe_name = f"{name[:-4]}-{version}-windows.exe"
                       shutil.copy2(src, release_dir / exe_name)
-                      # Zipped .exe
+                      # Zipped .exe + shortcut script
                       zip_path = release_dir / f"{name[:-4]}-{version}-windows.zip"
                       with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                           zf.write(src, arcname=name)
+                          if shortcut_script.exists():
+                              zf.write(shortcut_script, arcname="create-desktop-shortcuts.ps1")
           else:
               src = dist_dir / "hollemusic"
               if src.exists():

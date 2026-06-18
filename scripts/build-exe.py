@@ -23,6 +23,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 SRC_DIR = PROJECT_ROOT / "src"
 DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
+ICON_PATH = PROJECT_ROOT / "assets" / "icon.ico"
 
 
 def _platform_separator() -> str:
@@ -76,6 +77,7 @@ def build_terminal() -> Path:
         "--console",
         "--noconfirm",
         "--clean",
+        "--icon", str(ICON_PATH),
         "--add-data", f"{SRC_DIR / 'holle_music'}{sep}holle_music",
         "--hidden-import", "textual",
         "--hidden-import", "textual.widgets",
@@ -144,6 +146,7 @@ def build_pet() -> Path | None:
         "--console",
         "--noconfirm",
         "--clean",
+        "--icon", str(ICON_PATH),
         "--add-data", f"{SRC_DIR / 'holle_music'}{sep}holle_music",
         "--hidden-import", "PIL",
         "--hidden-import", "PIL.Image",
