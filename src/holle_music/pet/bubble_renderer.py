@@ -186,7 +186,7 @@ class BubbleRenderer:
             RGBA Image with rounded black background, white text and colored cursor.
         """
         font = self._get_font(FONT_SIZE)
-        hint = "/help查看帮助"
+        hint = "/help以查看帮助"
         display_text = text if text else hint
         text_w = self._text_width_mixed(display_text, FONT_SIZE)
         width = max(min_width, min(max_width, text_w + PADDING * 2 + 16))
