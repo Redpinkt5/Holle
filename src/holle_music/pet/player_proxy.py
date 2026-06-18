@@ -255,6 +255,9 @@ class PetPlayer:
             with open(self._state_file, "r", encoding="utf-8") as f:
                 state = json.load(f)
             last_time = state.get("time", 0)
+            source = state.get("source", "terminal")
+            if source != "terminal":
+                return False
             return (time.time() - last_time) < 5.0
         except Exception:
             return False
@@ -282,6 +285,7 @@ class PetPlayer:
                     {"title": s.title, "artist": s.artist, "path": str(s.path)}
                     for s in playlist
                 ],
+                "source": "pet",
                 "time": time.time(),
             }
             self._ipc_dir.mkdir(parents=True, exist_ok=True)

@@ -475,6 +475,7 @@ class HolleMusicApp(App):
             ],
             "color": get_shimmer_palette(),
             "main_color": settings.get("main_color", "light"),
+            "source": "terminal",
             "time": time.time(),
         }
         try:
@@ -496,6 +497,7 @@ class HolleMusicApp(App):
                 {"title": s.title, "artist": s.artist, "path": str(s.path)}
                 for s in self.player.playlist
             ],
+            "source": "terminal",
             "time": time.time(),
         }
         try:
