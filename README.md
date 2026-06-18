@@ -42,7 +42,20 @@ uv tool install holle-music
 hollemusic
 ```
 
-### 方式三：独立可执行文件（无需任何环境）
+### 方式三：Windows 安装包（推荐 Windows 用户）
+
+从 [Releases](https://github.com/Redpinkt5/Holle/releases) 下载 `HolleMusic-Setup-x.x.x.exe`：
+
+1. 双击运行安装向导
+2. 选择安装位置
+3. 勾选是否创建桌面快捷方式
+4. 安装完成后从桌面或开始菜单启动
+
+安装包包含：
+- **Holle Music** — 终端完整版
+- **Holle 桌面助手** — 桌面音乐助手
+
+### 方式四：独立可执行文件（无需任何环境）
 
 从 [Releases](https://github.com/Redpinkt5/Holle/releases) 下载对应系统的可执行文件：
 
@@ -50,7 +63,7 @@ hollemusic
 - **macOS**: 下载 `hollemusic`，`chmod +x hollemusic` 后运行
 - **Linux**: 下载 `hollemusic`，`chmod +x hollemusic` 后运行
 
-### 方式四：从源码运行
+### 方式五：从源码运行
 
 ```bash
 git clone https://github.com/Redpinkt5/Holle.git

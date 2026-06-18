@@ -15,6 +15,7 @@ Output files (in ``dist/``):
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -182,6 +183,42 @@ def build_pet() -> Path | None:
     return exe
 
 
+def build_installer(version: str) -> Path | None:
+    """Build Windows installer using Inno Setup (Windows only)."""
+    if sys.platform != "win32":
+        print("\n[SKIP] Installer build is Windows-only")
+        return None
+
+    iss_path = PROJECT_ROOT / "scripts" / "HolleMusic-Setup.iss"
+    if not iss_path.exists():
+        print(f"\n[WARN] Installer script not found: {iss_path}")
+        return None
+
+    print("\n" + "=" * 60)
+    print("Building Windows installer with Inno Setup...")
+    print("=" * 60)
+
+    env = os.environ.copy()
+    env["HOLLE_VERSION"] = version
+    try:
+        subprocess.run(["iscc", str(iss_path)], env=env, check=True)
+    except FileNotFoundError:
+        print("\n[WARN] iscc.exe not found. Install Inno Setup and add it to PATH.")
+        print("       https://jrsoftware.org/isdl.php")
+        return None
+    except subprocess.CalledProcessError as e:
+        print(f"\n[WARN] Inno Setup build failed: {e}")
+        return None
+
+    installer = DIST_DIR / f"HolleMusic-Setup-{version}.exe"
+    if installer.exists():
+        size_mb = installer.stat().st_size / (1024 * 1024)
+        print(f"\n[OK] Installer: {installer} ({size_mb:.1f} MB)")
+        return installer
+    print(f"\n[WARN] Installer not found after build: {installer}")
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build Holle Music executables")
     parser.add_argument(
@@ -193,6 +230,11 @@ def main() -> None:
         "--platform",
         default="",
         help="Platform name (windows, linux, macos) for logging",
+    )
+    parser.add_argument(
+        "--build-installer",
+        action="store_true",
+        help="Build Windows installer after EXEs (Windows only)",
     )
     args = parser.parse_args()
 
@@ -210,6 +252,15 @@ def main() -> None:
         pet = build_pet()
         if pet:
             built.append(pet)
+
+    if args.build_installer:
+        version = args.platform or "0.0.0"
+        # In CI, the version comes from the release tag; use a placeholder locally.
+        if version == "windows":
+            version = "0.0.0"
+        installer = build_installer(version)
+        if installer:
+            built.append(installer)
 
     print("\n" + "=" * 60)
     print("Build complete!")

@@ -100,6 +100,20 @@ jobs:
         shell: bash
         run: python scripts/build-exe.py --targets ${{ matrix.targets }} --platform ${{ matrix.name }}
 
+      - name: Install Inno Setup
+        if: matrix.name == 'windows'
+        run: choco install innosetup -y
+
+      - name: Build Windows installer
+        if: matrix.name == 'windows'
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          python scripts/build-exe.py --targets hollemusic,hollepet --platform windows --build-installer
+          # Move installer to release dir in the next step
+        env:
+          HOLLE_VERSION: ${{ github.ref_name }}
+
       - name: Package artifacts
         shell: python
         run: |
@@ -129,6 +143,10 @@ jobs:
                           zf.write(src, arcname=name)
                           if shortcut_script.exists():
                               zf.write(shortcut_script, arcname="create-desktop-shortcuts.ps1")
+              # Installer
+              installer_src = dist_dir / f"HolleMusic-Setup-{version}.exe"
+              if installer_src.exists():
+                  shutil.copy2(installer_src, release_dir / installer_src.name)
           else:
               src = dist_dir / "hollemusic"
               if src.exists():
