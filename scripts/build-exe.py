@@ -167,7 +167,6 @@ def build_pet() -> Path | None:
         "--hidden-import", "win32ui",
         "--exclude-module", "textual",
         "--exclude-module", "librosa",
-        "--exclude-module", "numpy",
         "--exclude-module", "ddgs",
         *_common_excludes(),
         "--distpath", str(DIST_DIR),
