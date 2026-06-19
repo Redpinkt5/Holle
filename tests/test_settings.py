@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -26,7 +27,7 @@ def clean_settings(monkeypatch, tmp_path):
     yield
 
 
-def _write_json(path: Path, data) -> None:
+def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -118,3 +119,17 @@ def test_save_settings_preserves_existing_keys(clean_settings):
     assert result["color"] == "orange"
     assert result["volume"] == 0.25
     assert result["play_mode"] == settings.DEFAULT_SETTINGS["play_mode"]
+
+
+def test_load_settings_returns_defaults_on_corrupt_json(clean_settings):
+    new_path = settings._settings_path()
+    new_path.write_text("not valid json", encoding="utf-8")
+    result = settings.load_settings()
+    assert result == settings.DEFAULT_SETTINGS
+
+
+def test_load_settings_returns_defaults_on_non_dict_json(clean_settings):
+    new_path = settings._settings_path()
+    _write_json(new_path, ["invalid"])
+    result = settings.load_settings()
+    assert result == settings.DEFAULT_SETTINGS
