@@ -48,13 +48,13 @@ def main() -> None:
     if provider and api_key:
         try:
             ai = create_ai_service(api_key, provider)
-        except Exception:
+        except Exception as e:
+            print(f"[PET] Failed to initialize AI service ({provider}): {e}")
             ai = None
     if ai is None:
         ai = ArkService()
 
     # Load persisted user settings (color and volume) before restoring state.
-    settings = load_settings()
     set_shimmer_palette(settings.get("color", "pink"))
     main_color = settings.get("main_color", "light")
 
