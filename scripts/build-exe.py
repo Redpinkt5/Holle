@@ -25,6 +25,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
 ICON_PATH = PROJECT_ROOT / "assets" / "icon.ico"
+PYINSTALLER_VERSION = "6.11.1"
 
 
 def _platform_separator() -> str:
@@ -41,8 +42,10 @@ def _ensure_pyinstaller() -> None:
     try:
         import PyInstaller.__main__  # noqa: F401
     except ImportError:
-        print("Installing PyInstaller...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller", "-q"])
+        print(f"Installing PyInstaller {PYINSTALLER_VERSION}...")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", f"pyinstaller=={PYINSTALLER_VERSION}", "-q"]
+        )
 
 
 def _common_excludes() -> list[str]:

@@ -94,7 +94,7 @@ jobs:
         shell: bash
         run: |
           pip install -e .
-          pip install pyinstaller
+          pip install pyinstaller==6.11.1
 
       - name: Build binaries
         shell: bash
