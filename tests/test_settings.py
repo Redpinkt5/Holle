@@ -63,6 +63,7 @@ def test_load_settings_migrates_old_settings_to_new_path(clean_settings):
 
 
 def test_load_settings_prefers_new_path_over_old_path(clean_settings):
+    """When both new and old paths exist, new path wins (migration is skipped)."""
     old_path = settings._old_settings_path()
     new_path = settings._settings_path()
     _write_json(old_path, {"color": "red", "volume": 0.3})
@@ -71,6 +72,21 @@ def test_load_settings_prefers_new_path_over_old_path(clean_settings):
     result = settings.load_settings()
     assert result["color"] == "green"
     assert result["volume"] == 0.8
+
+
+def test_load_settings_falls_back_to_old_path_when_migration_skipped(clean_settings, monkeypatch):
+    """When new path is absent and migration is skipped, old path is read directly."""
+    def _noop_migrate():
+        pass
+
+    monkeypatch.setattr(settings, "_migrate_settings", _noop_migrate)
+    old_path = settings._old_settings_path()
+    _write_json(old_path, {"color": "cyan", "volume": 0.42})
+
+    result = settings.load_settings()
+    assert result["color"] == "cyan"
+    assert result["volume"] == 0.42
+    assert result["play_mode"] == settings.DEFAULT_SETTINGS["play_mode"]
 
 
 def test_load_settings_falls_back_to_legacy_color_file(clean_settings):

@@ -72,15 +72,27 @@ def _legacy_color_path() -> Path:
 def load_settings() -> dict[str, Any]:
     """Load user settings from disk.
 
-    Tries the unified ``.holle_settings.json`` first. If that is missing,
-    falls back to the legacy ``.holle_color.json`` for the color value.
-    Returns ``DEFAULT_SETTINGS`` when neither file exists or reading fails.
+    Tries ``~/.holle_music/settings.json`` first. If that is missing,
+    falls back to the old ``.holle_settings.json`` next to this module,
+    then to the legacy ``.holle_color.json`` for the color value.
+    Returns ``DEFAULT_SETTINGS`` when no file exists or reading fails.
     """
     _migrate_settings()
     path = _settings_path()
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                merged = dict(DEFAULT_SETTINGS)
+                merged.update(data)
+                return merged
+        except Exception:
+            pass
+
+    old_path = _old_settings_path()
+    if old_path.exists():
+        try:
+            data = json.loads(old_path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 merged = dict(DEFAULT_SETTINGS)
                 merged.update(data)
