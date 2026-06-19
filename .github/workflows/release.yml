@@ -100,6 +100,17 @@ jobs:
         shell: bash
         run: python scripts/build-exe.py --targets ${{ matrix.targets }} --platform ${{ matrix.name }}
 
+      - name: Create macOS DMG
+        if: matrix.name == 'macos'
+        shell: bash
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          APP_DIR="HolleMusic-${VERSION}"
+          mkdir -p "${APP_DIR}"
+          cp dist/hollemusic "${APP_DIR}/"
+          ln -s /Applications "${APP_DIR}/Applications"
+          hdiutil create -volname "HolleMusic ${VERSION}" -srcfolder "${APP_DIR}" -ov -format UDZO "dist/hollemusic-${VERSION}-macos.dmg"
+
       - name: Install Inno Setup
         if: matrix.name == 'windows'
         run: choco install innosetup -y
@@ -155,6 +166,11 @@ jobs:
                   tar_path = release_dir / f"hollemusic-{version}-{suffix}.tar.gz"
                   with tarfile.open(tar_path, "w:gz") as tf:
                       tf.add(src, arcname="hollemusic")
+              # macOS DMG
+              if platform == "macos":
+                  dmg = dist_dir / f"hollemusic-{version}-macos.dmg"
+                  if dmg.exists():
+                      shutil.copy2(dmg, release_dir / dmg.name)
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
