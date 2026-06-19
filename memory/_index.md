@@ -14,6 +14,9 @@
 | 模块 | 路径 | 状态 | 最后更新 | 一句话 |
 |---|---|---|---|---|
 | settings | [`modules/project_settings.md`](modules/project_settings.md) | 已上线 | 2026-06-20 | 用户配置持久化，v0.3.0 迁移到 `~/.holle_music/settings.json` |
+| commands | [`modules/commands.md`](modules/commands.md) | 已上线 | 2026-06-20 | 命令解析器，支持 /ai 等新命令 |
+| ai_provider | [`modules/project_ai_provider.md`](modules/project_ai_provider.md) | 已上线 | 2026-06-20 | AI 供应商自动识别与 `/ai` 命令配置 |
+| pet | [`modules/pet.md`](modules/pet.md) | 已上线 | 2026-06-20 | 桌面宠物，支持多服务商 AI 聊天与播放控制 |
 <!-- INDEX:MODULES:END -->
 
 ### 1.2 参考类记忆
