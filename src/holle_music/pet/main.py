@@ -9,6 +9,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+from holle_music.ai_provider import create_ai_service
 from holle_music.pet.ai_tools import AITools
 from holle_music.pet.commands import PetCommandHandler
 from holle_music.pet.ark_api import ArkService
@@ -38,8 +39,19 @@ def _log_error(exc: BaseException) -> None:
 def main() -> None:
     """Start the desktop pet."""
     player = PetPlayer()
-    ai = ArkService()
     tools = AITools(player)
+
+    settings = load_settings()
+    provider = settings.get("ai_provider")
+    api_key = settings.get("ai_api_key")
+    ai = None
+    if provider and api_key:
+        try:
+            ai = create_ai_service(api_key, provider)
+        except Exception:
+            ai = None
+    if ai is None:
+        ai = ArkService()
 
     # Load persisted user settings (color and volume) before restoring state.
     settings = load_settings()
@@ -249,19 +261,22 @@ def main() -> None:
 
                 reply = None
                 try:
-                    current = ai.chat(message)
-                    for _ in range(5):
-                        if current["type"] == "tool_calls":
-                            tool_results = []
-                            for call in current["calls"]:
-                                tool_result = tools.execute(call["name"], call["arguments"])
-                                tool_results.append((call["id"], tool_result))
-                            current = ai.submit_tool_results(tool_results)
-                        elif current.get("content"):
-                            reply = current["content"]
-                            break
-                        else:
-                            break
+                    if hasattr(ai, "submit_tool_results"):
+                        current = ai.chat(message)
+                        for _ in range(5):
+                            if current["type"] == "tool_calls":
+                                tool_results = []
+                                for call in current["calls"]:
+                                    tool_result = tools.execute(call["name"], call["arguments"])
+                                    tool_results.append((call["id"], tool_result))
+                                current = ai.submit_tool_results(tool_results)
+                            elif current.get("content"):
+                                reply = current["content"]
+                                break
+                            else:
+                                break
+                    else:
+                        reply = ai.chat(message)
                 except Exception as e:
                     window.show_response_bubble(_friendly_error(e))
                     return
