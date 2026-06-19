@@ -5,6 +5,14 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
+__all__ = [
+    "PROVIDERS",
+    "detect_provider",
+    "create_ai_service",
+    "OpenAICompatibleService",
+]
+
+
 PROVIDERS: dict[str, dict[str, Any]] = {
     "openai": {
         "base_url": "https://api.openai.com/v1",
@@ -93,6 +101,9 @@ def detect_provider(api_key: str) -> str | None:
 
     Returns one of the keys in PROVIDERS, or None if no provider matches.
     """
+    if not api_key:
+        return None
+    api_key = api_key.strip()
     if not api_key:
         return None
 
@@ -207,9 +218,9 @@ class OpenAICompatibleService:
     def _retry(self, fn, max_retries: int = 3):
         import time
 
-        self._wait_rate_limit()
         last_error = None
         for attempt in range(max_retries):
+            self._wait_rate_limit()
             try:
                 result = fn()
                 self._last_request_time = time.time()
@@ -227,7 +238,7 @@ class OpenAICompatibleService:
         self._last_request_time = time.time()
         raise last_error
 
-    def chat(
+    def _chat_completion(
         self,
         message: str,
         on_token: Callable[[str], None] | None = None,
