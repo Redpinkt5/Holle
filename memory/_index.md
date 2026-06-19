@@ -13,6 +13,7 @@
 <!-- INDEX:MODULES:START -->
 | 模块 | 路径 | 状态 | 最后更新 | 一句话 |
 |---|---|---|---|---|
+| settings | [`modules/project_settings.md`](modules/project_settings.md) | 已上线 | 2026-06-20 | 用户配置持久化，v0.3.0 迁移到 `~/.holle_music/settings.json` |
 <!-- INDEX:MODULES:END -->
 
 ### 1.2 参考类记忆
