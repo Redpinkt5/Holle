@@ -147,7 +147,7 @@ def build_pet() -> Path | None:
         str(SRC_DIR / "holle_music" / "pet" / "main.py"),
         "--name", "hollepet",
         "--onefile",
-        "--console",
+        "--windowed",
         "--noconfirm",
         "--clean",
         "--icon", str(ICON_PATH),

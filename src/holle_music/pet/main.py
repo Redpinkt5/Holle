@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import sys
+import threading
+import traceback
+from datetime import datetime
 from pathlib import Path
 
 from holle_music.pet.ai_tools import AITools
@@ -11,6 +16,23 @@ from holle_music.pet.player_proxy import PetPlayer
 from holle_music.pet.window import PetWindow
 from holle_music.settings import load_settings, set_setting
 from holle_music.shared import set_shimmer_palette
+
+
+def _log_error(exc: BaseException) -> None:
+    """Write a crash traceback to a log file next to the executable."""
+    try:
+        if getattr(sys, "frozen", False):
+            log_dir = Path(sys.executable).parent
+        else:
+            log_dir = Path.home() / ".holle_music"
+            log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "hollepet-error.log"
+        log_path.write_text(
+            f"[{datetime.now().isoformat()}]\n{traceback.format_exc()}\n",
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
 
 def main() -> None:
@@ -208,8 +230,6 @@ def main() -> None:
                 return f"请求失败: {exc}"
 
             try:
-                from datetime import datetime
-
                 now = datetime.now()
                 weekdays = {
                     "Monday": "星期一",
@@ -254,7 +274,6 @@ def main() -> None:
                 if hasattr(window, 'show_response_bubble'):
                     window.show_response_bubble(_friendly_error(e))
 
-        import threading
         threading.Thread(target=ai_worker, daemon=True).start()
 
     window.set_chat_submit_callback(on_chat_send)
@@ -267,4 +286,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        _log_error(e)
+        raise
