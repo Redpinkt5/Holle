@@ -45,6 +45,7 @@ class CommandType(Enum):
     SEARCH = auto()
     COLOR = auto()
     UNKNOWN = auto()
+    AI = auto()
 
 
 @dataclass
@@ -86,6 +87,8 @@ COMMAND_MAP: dict[str, CommandType] = {
     "search": CommandType.SEARCH,
     "/color": CommandType.COLOR,
     "color": CommandType.COLOR,
+    "/ai": CommandType.AI,
+    "ai": CommandType.AI,
 }
 
 

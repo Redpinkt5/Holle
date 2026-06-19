@@ -66,3 +66,13 @@ class TestCommandParser:
         cmd = parse_command("  play   晴天  ")
         assert cmd.type == CommandType.PLAY
         assert cmd.args == "晴天"
+
+    def test_ai_command(self):
+        cmd = parse_command("/ai sk-abc123")
+        assert cmd.type == CommandType.AI
+        assert cmd.args == "sk-abc123"
+
+    def test_ai_command_without_args(self):
+        cmd = parse_command("/ai")
+        assert cmd.type == CommandType.AI
+        assert cmd.args == ""
