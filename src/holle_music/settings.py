@@ -1,8 +1,9 @@
 """Persistent user settings for Holle Music.
 
-Settings are stored next to this module in ``.holle_settings.json``.
-For backward compatibility, the legacy ``.holle_color.json`` file is still
-read for color if the new settings file does not exist.
+Settings are stored in the user's home directory under ``~/.holle_music/settings.json``.
+For backward compatibility, the legacy ``.holle_settings.json`` file next to this
+module is automatically migrated on first load, and the legacy ``.holle_color.json``
+file is still read for color if the new settings file does not exist.
 """
 
 from __future__ import annotations
@@ -24,8 +25,43 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
 
 def _settings_path() -> Path:
-    """Return path to the unified settings file."""
+    """Return path to the unified settings file in the user's home directory."""
+    settings_dir = Path.home() / ".holle_music"
+    try:
+        settings_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return settings_dir / "settings.json"
+
+
+def _old_settings_path() -> Path:
+    """Return the legacy settings file next to this module (pre-0.3.0)."""
     return Path(__file__).parent / ".holle_settings.json"
+
+
+def _migrate_settings() -> None:
+    """Copy settings from the legacy package location to the user home if needed.
+
+    This is a one-time migration for users upgrading from versions before 0.3.0.
+    The old file is left in place as a backup.
+    """
+    new_path = _settings_path()
+    if new_path.exists():
+        return
+
+    old_path = _old_settings_path()
+    if not old_path.exists():
+        return
+
+    try:
+        data = json.loads(old_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            new_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+    except Exception:
+        pass
 
 
 def _legacy_color_path() -> Path:
@@ -40,6 +76,7 @@ def load_settings() -> dict[str, Any]:
     falls back to the legacy ``.holle_color.json`` for the color value.
     Returns ``DEFAULT_SETTINGS`` when neither file exists or reading fails.
     """
+    _migrate_settings()
     path = _settings_path()
     if path.exists():
         try:
