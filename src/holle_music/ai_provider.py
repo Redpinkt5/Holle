@@ -66,13 +66,10 @@ _SYSTEM_PROMPT = """你是一个专业的音乐助手，运行在终端音乐播
 def _ensure_openai() -> None:
     try:
         import openai  # noqa: F401
-    except ImportError:
-        import subprocess
-        import sys
-
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "openai>=1.0.0", "-q"]
-        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "openai>=1.0.0 is required. Install it with: pip install openai>=1.0.0"
+        ) from exc
 
 
 def _test_provider(config: dict[str, Any], api_key: str) -> bool:
@@ -92,6 +89,11 @@ def _test_provider(config: dict[str, Any], api_key: str) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=3) as resp:
             return resp.status == 200
+    except urllib.error.HTTPError as exc:
+        # A 401 definitively means the key is not accepted by this provider.
+        if exc.code == 401:
+            return False
+        return False
     except Exception:
         return False
 

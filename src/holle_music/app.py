@@ -1025,23 +1025,36 @@ class HolleMusicApp(App):
             if not key:
                 self._notify_chat("用法: /ai <你的 API Key>")
             else:
-                from holle_music.ai_provider import PROVIDERS, detect_provider, create_ai_service
-                provider = detect_provider(key)
-                if not provider:
-                    self._notify_chat("无法识别该 API Key 对应的供应商，请检查 key 是否正确")
-                else:
-                    config = PROVIDERS[provider]
-                    set_setting("ai_provider", provider)
-                    set_setting("ai_api_key", key)
-                    set_setting("ai_base_url", config["base_url"])
-                    set_setting("ai_model", config["model"])
-                    try:
-                        self._ai = create_ai_service(key, provider)
-                        self._notify_chat(f"AI 已配置为: {provider}")
-                    except Exception as e:
-                        self._notify_chat(f"AI 初始化失败: {e}")
+                self._notify_chat("正在识别供应商...")
+
+                def _detect():
+                    from holle_music.ai_provider import detect_provider
+
+                    provider = detect_provider(key)
+                    self.call_from_thread(lambda: self._finish_ai_setup(provider, key))
+
+                threading.Thread(target=_detect, daemon=True).start()
         elif cmd.type == CommandType.UNKNOWN:
             self._notify_chat(f"未知命令: {cmd.args or '?'}")
+
+    def _finish_ai_setup(self, provider: str | None, key: str) -> None:
+        """Complete /ai setup on the main thread after provider detection."""
+        from holle_music.ai_provider import PROVIDERS, create_ai_service
+
+        if not provider:
+            self._notify_chat("无法识别该 API Key 对应的供应商，请检查 key 是否正确")
+            return
+
+        config = PROVIDERS[provider]
+        set_setting("ai_provider", provider)
+        set_setting("ai_api_key", key)
+        set_setting("ai_base_url", config["base_url"])
+        set_setting("ai_model", config["model"])
+        try:
+            self._ai = create_ai_service(key, provider)
+            self._notify_chat(f"AI 已配置为: {provider}")
+        except Exception as e:
+            self._notify_chat(f"AI 初始化失败: {e}")
 
     # ── Playlist UI ─────────────────────────────────────────────────
 
