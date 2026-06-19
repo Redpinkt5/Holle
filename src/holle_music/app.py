@@ -26,7 +26,6 @@ from holle_music.widgets import (
     get_shimmer_palette,
     restart_active_shimmers,
 )
-from holle_music.minimax_api import MiniMaxService
 from holle_music.settings import load_settings, set_setting
 
 
@@ -348,10 +347,24 @@ class HolleMusicApp(App):
         self._playlists: dict[str, Playlist] = {}
         self._displayed_songs: list[Song] = []
         self._original_songs: list[Song] = []
-        self._ai = MiniMaxService()
+        self._ai = self._init_ai_service()
         self._current_music_dir = load_settings().get("music_dir", "E:/Music")
         self.player.set_play_mode(load_settings().get("play_mode", "sequential"))
         self.player.on_song_change(self._on_song_changed)
+
+    def _init_ai_service(self):
+        """Initialize AI service from saved settings, or None if not configured."""
+        from holle_music.ai_provider import create_ai_service
+
+        settings = load_settings()
+        provider = settings.get("ai_provider")
+        api_key = settings.get("ai_api_key")
+        if provider and api_key:
+            try:
+                return create_ai_service(api_key, provider)
+            except Exception:
+                return None
+        return None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -659,6 +672,9 @@ class HolleMusicApp(App):
         self._write_pet_state()
 
     def _query_song_background(self, song: Song) -> None:
+        if self._ai is None:
+            return
+
         prompt = (
             f"歌曲：《{song.title}》，歌手：{song.artist}。"
             f"请用2-3句话简要介绍这首歌的背景（创作故事、风格特点等）"
@@ -887,6 +903,10 @@ class HolleMusicApp(App):
         chat.add_user_msg(text)
         chat.set_pending()
 
+        if self._ai is None:
+            chat.add_ai_msg("请先使用 /ai <你的 API Key> 配置 AI")
+            return
+
         def _run():
             try:
                 from datetime import datetime
@@ -966,6 +986,7 @@ class HolleMusicApp(App):
                 "/scan [文件路径]  扫描音乐文件夹\n"
                 "/search <关键词>  搜索歌曲\n"
                 "/color <颜色>  选择闪烁颜色\n"
+                "/ai <API Key>  配置 AI\n"
                 "顺序⭢ 单曲⟳ 随机↬ | 空格 暂停\n"
                 "/quit  退出"
             )
@@ -999,6 +1020,26 @@ class HolleMusicApp(App):
             self._search_songs(cmd.args)
         elif cmd.type == CommandType.QUIT:
             self.exit()
+        elif cmd.type == CommandType.AI:
+            key = (cmd.args or "").strip()
+            if not key:
+                self._notify_chat("用法: /ai <你的 API Key>")
+            else:
+                from holle_music.ai_provider import PROVIDERS, detect_provider, create_ai_service
+                provider = detect_provider(key)
+                if not provider:
+                    self._notify_chat("无法识别该 API Key 对应的供应商，请检查 key 是否正确")
+                else:
+                    config = PROVIDERS[provider]
+                    set_setting("ai_provider", provider)
+                    set_setting("ai_api_key", key)
+                    set_setting("ai_base_url", config["base_url"])
+                    set_setting("ai_model", config["model"])
+                    try:
+                        self._ai = create_ai_service(key, provider)
+                        self._notify_chat(f"AI 已配置为: {provider}")
+                    except Exception as e:
+                        self._notify_chat(f"AI 初始化失败: {e}")
         elif cmd.type == CommandType.UNKNOWN:
             self._notify_chat(f"未知命令: {cmd.args or '?'}")
 
