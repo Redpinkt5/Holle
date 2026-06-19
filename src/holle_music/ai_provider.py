@@ -238,7 +238,7 @@ class OpenAICompatibleService:
         self._last_request_time = time.time()
         raise last_error
 
-    def _chat_completion(
+    def chat(
         self,
         message: str,
         on_token: Callable[[str], None] | None = None,
