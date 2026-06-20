@@ -54,6 +54,7 @@ metadata:
 
 - **2026-06-20 (v0.3.0+)**：创建模块，实现 `PROVIDERS`、`detect_provider`、`create_ai_service`、`OpenAICompatibleService`。
 - **2026-06-20**：`create_ai_service` 支持可选 `model` 参数，用于 `/model <模型名>` 切换模型。
+- **2026-06-21**：`_SYSTEM_PROMPT` 增加记忆上下文使用说明，配合 `ai_memory` 模块注入历史记忆。
 
 ## 已知问题
 

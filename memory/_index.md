@@ -15,8 +15,9 @@
 |---|---|---|---|---|
 | settings | [`modules/project_settings.md`](modules/project_settings.md) | 已上线 | 2026-06-20 | 用户配置持久化，v0.3.0 迁移到 `~/.holle_music/settings.json` |
 | commands | [`modules/commands.md`](modules/commands.md) | 已上线 | 2026-06-20 | 命令解析器，支持 /ai 等新命令 |
-| ai_provider | [`modules/project_ai_provider.md`](modules/project_ai_provider.md) | 已上线 | 2026-06-20 | AI 供应商自动识别与 `/ai` 命令配置，服务工厂支持可选模型参数 |
-| pet | [`modules/pet.md`](modules/pet.md) | 已上线 | 2026-06-20 | 桌面宠物，修复 AI tool-calling 参数 JSON 字符串解析问题 |
+| ai_provider | [`modules/project_ai_provider.md`](modules/project_ai_provider.md) | 已上线 | 2026-06-21 | AI 供应商自动识别与 `/ai` 命令配置，服务工厂支持可选模型参数 |
+| pet | [`modules/pet.md`](modules/pet.md) | 已上线 | 2026-06-21 | 桌面宠物，含 AI tool-calling、播放兜底、记忆上下文注入 |
+| ai_memory | [`modules/project_ai_memory.md`](modules/project_ai_memory.md) | 已上线 | 2026-06-21 | AI 助手持久化记忆（STM + LTM），支持 prompt 注入 |
 <!-- INDEX:MODULES:END -->
 
 ### 1.2 参考类记忆

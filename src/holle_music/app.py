@@ -15,6 +15,7 @@ from textual.containers import Grid
 from holle_music.models import Song, Playlist
 from holle_music.scanner import Scanner
 from holle_music.player import Player
+from holle_music.ai_memory import MemoryKind, MemoryManager
 from holle_music.widgets import (
     NowPlaying,
     PlaylistPanel,
@@ -352,6 +353,7 @@ class HolleMusicApp(App):
         self._displayed_songs: list[Song] = []
         self._original_songs: list[Song] = []
         self._ai = self._init_ai_service()
+        self._memory = MemoryManager()
         self._current_music_dir = load_settings().get("music_dir", "E:/Music")
         self.player.set_play_mode(load_settings().get("play_mode", "sequential"))
         self.player.on_song_change(self._on_song_changed)
@@ -970,7 +972,8 @@ class HolleMusicApp(App):
                     from holle_music.tui_tools import TUITools
 
                     tools = TUITools(self)
-                    prompt_parts = [time_ctx, song_ctx, f"用户指令: {text}"]
+                    memory_ctx = self._memory.build_context(text)
+                    prompt_parts = [time_ctx, song_ctx, memory_ctx, f"用户指令: {text}"]
                     prompt_parts.append(
                         "如果这条指令涉及播放、暂停、切歌、调节音量或切换播放模式，请先调用对应的工具执行，不要只回复文本。"
                     )
@@ -1011,16 +1014,30 @@ class HolleMusicApp(App):
                             tools, text, response
                         )
 
+                    # Persist conversation to memory.
+                    self._memory.record(MemoryKind.CONVERSATION, f"用户: {text}", importance=0.3)
+                    if response:
+                        self._memory.record(
+                            MemoryKind.CONVERSATION, f"AI: {response}", importance=0.3
+                        )
+                    if played or (response and "正在播放" in response):
+                        self._memory.record(
+                            MemoryKind.DECISION,
+                            f"执行了播放操作（用户指令: {text}）",
+                            importance=0.6,
+                        )
+
                     self.call_from_thread(lambda: chat.add_ai_msg(response or "AI 没有返回内容"))
                     return
 
                 # Non-tool services: do a manual web search and return a chat reply.
+                memory_ctx = self._memory.build_context(text)
+                prompt_parts = [time_ctx, song_ctx, memory_ctx, f"用户问题: {text}"]
                 try:
                     results = self._ai.search_web(text)
                 except Exception:
                     results = ""
 
-                prompt_parts = [time_ctx, song_ctx, f"用户问题: {text}"]
                 if results:
                     prompt_parts.append(f"以下是通过联网搜索获得的实时参考信息，请优先依据这些信息回答:\n{results}")
                 else:
@@ -1028,6 +1045,13 @@ class HolleMusicApp(App):
 
                 prompt = "\n\n".join(filter(None, prompt_parts))
                 response = self._ai.chat(prompt)
+
+                self._memory.record(MemoryKind.CONVERSATION, f"用户: {text}", importance=0.3)
+                if response:
+                    self._memory.record(
+                        MemoryKind.CONVERSATION, f"AI: {response}", importance=0.3
+                    )
+
                 self.call_from_thread(lambda: chat.add_ai_msg(response))
             except Exception as e:
                 self.call_from_thread(lambda: chat.add_ai_msg(f"请求失败: {e}"))

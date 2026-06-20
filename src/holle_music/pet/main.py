@@ -17,6 +17,7 @@ from holle_music.pet.player_proxy import PetPlayer
 from holle_music.pet.window import PetWindow
 from holle_music.settings import load_settings, set_setting
 from holle_music.shared import set_shimmer_palette
+from holle_music.ai_memory import MemoryKind, MemoryManager
 
 
 def _log_error(exc: BaseException) -> None:
@@ -40,6 +41,7 @@ def main() -> None:
     """Start the desktop pet."""
     player = PetPlayer()
     tools = AITools(player)
+    memory = MemoryManager()
 
     settings = load_settings()
     provider = settings.get("ai_provider")
@@ -271,6 +273,10 @@ def main() -> None:
 
                 message = f"{time_ctx}\n\n{text}"
 
+                memory_ctx = memory.build_context(text)
+                if memory_ctx:
+                    message = f"{memory_ctx}\n\n{message}"
+
                 if not getattr(ai, "is_configured", False):
                     window.show_response_bubble("请先使用 /ai <你的 API Key> 配置 AI")
                     return
@@ -311,6 +317,17 @@ def main() -> None:
                 except Exception as e:
                     window.show_response_bubble(_friendly_error(e))
                     return
+
+                # Persist conversation to memory.
+                memory.record(MemoryKind.CONVERSATION, f"用户: {text}", importance=0.3)
+                if reply:
+                    memory.record(MemoryKind.CONVERSATION, f"AI: {reply}", importance=0.3)
+                if played or (reply and "正在播放" in reply):
+                    memory.record(
+                        MemoryKind.DECISION,
+                        f"执行了播放操作（用户指令: {text}）",
+                        importance=0.6,
+                    )
 
                 if reply and hasattr(window, 'show_response_bubble'):
                     window.show_response_bubble(reply)
