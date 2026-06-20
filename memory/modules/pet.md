@@ -73,7 +73,7 @@ if ai is None:
 - **2026-06-20** 增加兜底逻辑：当 AI 只搜索不播放且用户话语明显带有播放意图时，自动从最近搜索结果中挑选最佳匹配并调用 `play_song`
 - **2026-06-21** 接入 `ai_memory` 模块：`pet/main.py` 在 AI 聊天前注入记忆上下文，回复后记录对话与播放决策；`ark_api.py` / `deepseek_api.py` 系统提示增加记忆使用说明
 - **2026-06-21** 为非 tool-calling 服务（MiniMax / OpenAICompatibleService）增加本地播放兜底：检测到播放意图后，先 `search_local` 再自动 `play_song`
-- **2026-06-21** 修复 Pet 独立运行（没有主程序）时 `play_song` / `set_volume` / `set_mode` 只发 IPC 不实际执行的问题；`PetPlayer` 新增 `play_song`、`set_volume_pct`、`set_mode` 方法，独立模式下直接操作播放器
+- **2026-06-21** 新增 `play_artist` 工具：播放某位歌手所有本地歌曲，并自动加载为当前播放列表；TUI 与 Pet 的兜底逻辑在检测到“播放某歌手的歌”时也会优先加载歌手全部歌曲
 
 ## 已知问题
 
