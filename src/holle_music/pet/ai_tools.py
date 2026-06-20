@@ -19,9 +19,14 @@ class AITools:
         player: PetPlayer instance used for IPC and state queries.
     """
 
-    def __init__(self, player: Any) -> None:
+    def __init__(self, player: Any, window: Any = None) -> None:
         self._player = player
+        self._window = window
         self._last_search_results: list[dict] = []
+
+    def set_window(self, window: Any) -> None:
+        """Set the pet window reference so color tools can trigger a redraw."""
+        self._window = window
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -331,21 +336,19 @@ class AITools:
         name = args.get("color", "").strip().lower()
         if not name:
             return "颜色名不能为空"
-        from holle_music.shared import set_shimmer_palette
+        from holle_music.shared import set_shimmer_palette, _SHIMMER_PALETTES
         from holle_music.settings import set_setting
 
         if set_shimmer_palette(name):
             set_setting("color", name)
             if self._player._is_main_app_running():
                 self._player._send_cmd(f"color:{name}")
-            try:
-                from holle_music.pet.window import PetWindow
-                if isinstance(self._player, PetWindow):
-                    self._player._update_display()
-            except Exception:
-                pass
+            if self._window is not None:
+                try:
+                    self._window._update_display()
+                except Exception:
+                    pass
             return f"闪烁颜色已切换为: {name}"
-        from holle_music.shared import _SHIMMER_PALETTES
         valid = ", ".join(sorted(_SHIMMER_PALETTES.keys()))
         return f"无效颜色 '{name}'，可选: {valid}"
 
@@ -359,6 +362,11 @@ class AITools:
         set_setting("main_color", name)
         if self._player._is_main_app_running():
             self._player._send_cmd(f"maincolor:{name}")
+        if self._window is not None:
+            try:
+                self._window.set_main_color(name)
+            except Exception:
+                pass
         return f"主体配色已切换为: {name}"
 
     def _tool_scan_music_folder(self, args: dict) -> str:
