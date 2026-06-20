@@ -151,14 +151,14 @@ class AITools:
             s_artist = (song.get("artist") or "").strip()
             if title.lower() in s_title.lower():
                 if not artist or artist.lower() in s_artist.lower():
-                    self._player._send_cmd(f"play:{json.dumps(song, ensure_ascii=False)}")
+                    self._player.play_song(song)
                     return f"正在播放: {s_title} - {s_artist}"
 
         # Fall back to sending the raw title
         payload = {"title": title}
         if artist:
             payload["artist"] = artist
-        self._player._send_cmd(f"play:{json.dumps(payload, ensure_ascii=False)}")
+        self._player.play_song(payload)
         return f"尝试播放: {title}" + (f" - {artist}" if artist else "")
 
     def _tool_toggle_play(self, _args: dict) -> str:
@@ -194,7 +194,7 @@ class AITools:
             return "音量值无效，请输入 0-100 的整数"
 
         volume = max(0, min(100, volume))
-        self._player._send_cmd(f"volume:{volume}")
+        self._player.set_volume_pct(volume)
         return f"音量已设置为 {volume}%"
 
     def _tool_set_mode(self, args: dict) -> str:
@@ -203,7 +203,7 @@ class AITools:
         valid_modes = {"sequential", "random", "repeat"}
         if mode not in valid_modes:
             return f"无效模式 '{mode}'，可选: sequential, random, repeat"
-        self._player._send_cmd(f"mode:{mode}")
+        self._player.set_mode(mode)
         mode_labels = {
             "sequential": "顺序播放",
             "random": "随机播放",

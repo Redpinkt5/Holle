@@ -48,7 +48,7 @@ def test_play_song_uses_last_search_results(player):
     tools.execute("search_local", '{"query": "陈奕迅"}')
     result = tools.execute("play_song", '{"title": "浮夸"}')
     assert "正在播放" in result
-    assert player._send_cmd.called
+    assert player.play_song.called
 
 
 def test_unknown_tool_returns_error(player):

@@ -170,6 +170,35 @@ class PetPlayer:
             self._standalone_player.set_play_mode(mode)
         set_setting("play_mode", mode)
 
+    def play_song(self, song: dict) -> None:
+        """Play a specific song, via IPC if the main app is running, else standalone."""
+        if self._is_main_app_running():
+            self._send_cmd(f"play:{json.dumps(song, ensure_ascii=False)}")
+        elif self._standalone_player is not None:
+            try:
+                typed = Song(**song) if not isinstance(song, Song) else song
+                self._standalone_player.play(typed)
+            except Exception:
+                pass
+
+    def set_volume_pct(self, volume: int) -> None:
+        """Set volume by percentage (0-100)."""
+        if self._is_main_app_running():
+            self._send_cmd(f"volume:{volume}")
+        elif self._standalone_player is not None:
+            self._standalone_player.set_volume(volume / 100.0)
+
+    def set_mode(self, mode: str) -> None:
+        """Set play mode by name, via IPC or standalone."""
+        if mode not in self._MODES:
+            return
+        self._mode_index = self._MODES.index(mode)
+        if self._is_main_app_running():
+            self._send_cmd(f"mode:{mode}")
+        elif self._standalone_player is not None:
+            self._standalone_player.set_play_mode(mode)
+        set_setting("play_mode", mode)
+
     def get_state(self) -> dict:
         if self._state_file.exists():
             try:
