@@ -214,7 +214,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "set_color",
-            "description": "切换闪烁颜色",
+            "description": "切换宠物边框的闪烁颜色（如 pink、blue、red），不是主题明暗",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -231,7 +231,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "set_main_color",
-            "description": "切换主体配色（明亮/暗黑）",
+            "description": "切换主题配色：light（明亮模式/白色主题）或 dark（暗黑模式/深色主题），与闪烁颜色无关",
             "parameters": {
                 "type": "object",
                 "properties": {

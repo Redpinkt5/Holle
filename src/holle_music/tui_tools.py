@@ -92,14 +92,14 @@ class TUITools:
         if "音量" in t:
             return self.execute("get_volume", {})
 
-        m = re.search(r"颜色\s*(\w+)", text)
-        if m:
-            return self.execute("set_color", {"color": m.group(1)})
-
         m = re.search(r"主题\s*(light|dark|明亮|暗黑)", text, re.IGNORECASE)
         if m:
             mode = "light" if m.group(1).lower() in ("light", "明亮") else "dark"
             return self.execute("set_main_color", {"mode": mode})
+
+        m = re.search(r"颜色\s*(\w+)", text)
+        if m:
+            return self.execute("set_color", {"color": m.group(1)})
 
         m = re.search(r"模式\s*(顺序|单曲|随机|sequential|random|repeat)", text, re.IGNORECASE)
         if m:
