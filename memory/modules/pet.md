@@ -70,5 +70,8 @@ if ai is None:
 - **2026-06-20** 接入共享 AI 配置：从 `settings.json` 读取 `ai_provider`/`ai_api_key`，支持多服务商切换，回退 ArkService
 - **2026-06-20** 修复 `AITools.execute`/`TUITools.execute` 未将 DeepSeek 返回的 JSON 字符串参数解析为 dict 的问题，使本地搜索、播放控制等工具在 DeepSeek 服务下正常工作
 - **2026-06-20** 强化 DeepSeek/Ark 系统提示与搜索工具返回文本，要求 AI 在找到歌曲后必须调用 `play_song` 工具实际播放，避免只回复文本而不执行播放
+- **2026-06-20** 增加兜底逻辑：当 AI 只搜索不播放且用户话语明显带有播放意图时，自动从最近搜索结果中挑选最佳匹配并调用 `play_song`
+
+## 已知问题
 
 - `AITools.execute` 与 `TUITools.execute` 已兼容 dict 和 JSON 字符串两种参数形式，但调用方仍应优先传递 dict；Ark 服务已在内部完成解析。

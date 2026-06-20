@@ -1,6 +1,6 @@
 # 当前状态
 
-- **版本**：v0.3.3（已推送 tag，GitHub Actions release 流程已触发）
+- **版本**：v0.3.3（已推送 tag），本地另有未推送的播放兜底修复
 - **主要完成项**：
   - `/ai <apikey>` 自动识别 AI 供应商，`/model <模型名>` 切换模型
   - TUI 与 Pet 共享 `~/.holle_music/settings.json` 中的 AI 配置
@@ -9,5 +9,6 @@
   - 修复 DeepSeek tool-call 历史格式错误
   - 修复 AI 工具参数 JSON 字符串未解析导致本地/联网搜索失败的问题
   - 强化系统提示，要求 AI 在找到歌曲后必须调用 `play_song` 工具实际播放
+  - 增加兜底：AI 只搜索不播放时，若用户有播放意图则自动播放最佳匹配结果（本地 commit `34cb261`，未推送）
 - **测试**：87/87 通过
-- **待观察**：GitHub Actions release artifact 生成结果、v0.3.3 实际播放行为
+- **待观察**：本地播放兜底测试通过后，再 bump v0.3.4 并推送
