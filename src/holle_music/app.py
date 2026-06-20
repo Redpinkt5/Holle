@@ -1105,23 +1105,27 @@ class HolleMusicApp(App):
                 response = self._ai.chat(prompt)
 
                 # For plain-text services (MiniMax/OpenAI-compatible), the model
-                # cannot call tools. Detect playback / restore intent and execute locally.
+                # cannot call tools. Detect common commands and execute locally.
                 if self._should_restore(text):
                     from holle_music.tui_tools import TUITools
 
                     tools = TUITools(self)
                     response = tools.execute("restore_playlist", {})
-                elif self._should_auto_play(text):
+                else:
                     from holle_music.tui_tools import TUITools
 
                     tools = TUITools(self)
-                    query = TUITools.extract_play_query(text)
-                    if query:
-                        tools.execute("search_local", {"query": query})
-                        if tools._last_search_results:
-                            response = self._auto_play_search_result(
-                                tools, text, response or "", query=query
-                            )
+                    intent_result = tools.execute_plain_intent(text)
+                    if intent_result is not None:
+                        response = intent_result
+                    elif self._should_auto_play(text):
+                        query = TUITools.extract_play_query(text)
+                        if query:
+                            tools.execute("search_local", {"query": query})
+                            if tools._last_search_results:
+                                response = self._auto_play_search_result(
+                                    tools, text, response or "", query=query
+                                )
 
                 self._memory.record(MemoryKind.CONVERSATION, f"用户: {text}", importance=0.3)
                 if response:

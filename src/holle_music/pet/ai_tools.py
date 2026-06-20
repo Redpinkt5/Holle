@@ -104,6 +104,50 @@ class AITools:
             return play_result
         return response
 
+    def execute_plain_intent(self, text: str) -> str | None:
+        """Try to handle common plain-text commands without LLM tool calling."""
+        import re
+
+        t = text.strip().lower()
+        if any(k in t for k in ("暂停", "别放", "stop")):
+            return self.execute("toggle_play", {})
+        if any(k in t for k in ("下一首", "下一曲", "下一")):
+            return self.execute("next_track", {})
+        if any(k in t for k in ("上一首", "上一曲", "上一")):
+            return self.execute("prev_track", {})
+
+        m = re.search(r"音量\s*(\d+)", text)
+        if m:
+            return self.execute("set_volume", {"volume": int(m.group(1))})
+        if "音量" in t:
+            return self.execute("get_volume", {})
+
+        m = re.search(r"颜色\s*(\w+)", text)
+        if m:
+            return self.execute("set_color", {"color": m.group(1)})
+
+        m = re.search(r"主题\s*(light|dark|明亮|暗黑)", text, re.IGNORECASE)
+        if m:
+            mode = "light" if m.group(1).lower() in ("light", "明亮") else "dark"
+            return self.execute("set_main_color", {"mode": mode})
+
+        m = re.search(r"模式\s*(顺序|单曲|随机|sequential|random|repeat)", text, re.IGNORECASE)
+        if m:
+            mode_map = {"顺序": "sequential", "单曲": "repeat", "随机": "random"}
+            mode = mode_map.get(m.group(1), m.group(1).lower())
+            return self.execute("set_mode", {"mode": mode})
+
+        m = re.search(r"扫描\s*(.+)", text)
+        if m:
+            return self.execute("scan_music_folder", {"path": m.group(1).strip()})
+
+        if any(k in t for k in ("在放什么", "当前歌曲", "正在播放")):
+            return self.execute("get_current_song", {})
+        if any(k in t for k in ("歌单", "列表")):
+            return self.execute("get_playlist", {})
+
+        return None
+
     # ── Tool implementations ──────────────────────────────────────────────
 
     def _tool_search_local(self, args: dict) -> str:
@@ -276,3 +320,63 @@ class AITools:
         if len(playlist) > 20:
             lines.append(f"... 还有 {len(playlist) - 20} 首")
         return "\n".join(lines)
+
+    def _tool_get_volume(self, _args: dict) -> str:
+        """Return the current volume."""
+        vol = int(self._player.volume * 100)
+        return f"当前音量: {vol}%"
+
+    def _tool_set_color(self, args: dict) -> str:
+        """Set the shimmer color."""
+        name = args.get("color", "").strip().lower()
+        if not name:
+            return "颜色名不能为空"
+        from holle_music.shared import set_shimmer_palette
+        from holle_music.settings import set_setting
+
+        if set_shimmer_palette(name):
+            set_setting("color", name)
+            if self._player._is_main_app_running():
+                self._player._send_cmd(f"color:{name}")
+            try:
+                from holle_music.pet.window import PetWindow
+                if isinstance(self._player, PetWindow):
+                    self._player._update_display()
+            except Exception:
+                pass
+            return f"闪烁颜色已切换为: {name}"
+        from holle_music.shared import _SHIMMER_PALETTES
+        valid = ", ".join(sorted(_SHIMMER_PALETTES.keys()))
+        return f"无效颜色 '{name}'，可选: {valid}"
+
+    def _tool_set_main_color(self, args: dict) -> str:
+        """Set the main UI color theme."""
+        name = args.get("mode", "").strip().lower()
+        if name not in ("light", "dark"):
+            return "无效主体配色，可选: light / dark"
+        from holle_music.settings import set_setting
+
+        set_setting("main_color", name)
+        if self._player._is_main_app_running():
+            self._player._send_cmd(f"maincolor:{name}")
+        return f"主体配色已切换为: {name}"
+
+    def _tool_scan_music_folder(self, args: dict) -> str:
+        """Scan a music folder and load it into the playlist."""
+        from pathlib import Path
+        from holle_music.settings import set_setting
+
+        path_str = args.get("path", "").strip()
+        path = Path(path_str) if path_str else Path("E:/Music")
+        if not path.exists():
+            return f"路径不存在: {path}"
+        try:
+            from holle_music.scanner import Scanner
+            scanner = Scanner()
+            playlist = scanner.scan_to_playlist(path, name=path.name)
+            songs = list(playlist.songs)
+            self._player.load_playlist(songs)
+            set_setting("music_dir", str(path.resolve()))
+            return f"已扫描 {len(songs)} 首歌曲"
+        except Exception as exc:
+            return f"扫描失败: {exc}"

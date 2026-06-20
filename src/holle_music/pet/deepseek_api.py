@@ -201,6 +201,66 @@ TOOLS: list[dict[str, Any]] = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_volume",
+            "description": "获取当前音量",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_color",
+            "description": "切换闪烁颜色",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "color": {
+                        "type": "string",
+                        "description": "颜色名，例如 pink / blue / red / green / yellow / purple / orange / gray / brown / black / white / colorful",
+                    },
+                },
+                "required": ["color"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_main_color",
+            "description": "切换主体配色（明亮/暗黑）",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string",
+                        "description": "主体配色",
+                        "enum": ["light", "dark"],
+                    },
+                },
+                "required": ["mode"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scan_music_folder",
+            "description": "扫描音乐文件夹并加载到播放列表",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "音乐文件夹路径，留空则使用默认路径",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 

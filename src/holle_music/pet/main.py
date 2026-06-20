@@ -321,8 +321,8 @@ def main() -> None:
                     else:
                         reply = ai.chat(message)
                         # For plain-text services (MiniMax/OpenAI-compatible), the
-                        # model cannot call tools. Detect playback / restore intent
-                        # and execute locally.
+                        # model cannot call tools. Detect common commands and
+                        # execute them locally.
                         if any(
                             kw in text
                             for kw in (
@@ -331,18 +331,22 @@ def main() -> None:
                             )
                         ):
                             reply = tools.execute("restore_playlist", {})
-                        elif any(
-                            kw in text
-                            for kw in (
-                                "播放", "来一首", "听", "唱", "想听", "放",
-                                "点一首", "来一曲", "给我听",
-                            )
-                        ):
-                            query = tools.extract_play_query(text)
-                            if query:
-                                tools.execute("search_local", {"query": query})
-                                if tools._last_search_results:
-                                    reply = tools.auto_play_best_match(text, reply or "", query=query)
+                        else:
+                            intent_result = tools.execute_plain_intent(text)
+                            if intent_result is not None:
+                                reply = intent_result
+                            elif any(
+                                kw in text
+                                for kw in (
+                                    "播放", "来一首", "听", "唱", "想听", "放",
+                                    "点一首", "来一曲", "给我听",
+                                )
+                            ):
+                                query = tools.extract_play_query(text)
+                                if query:
+                                    tools.execute("search_local", {"query": query})
+                                    if tools._last_search_results:
+                                        reply = tools.auto_play_best_match(text, reply or "", query=query)
                 except Exception as e:
                     window.show_response_bubble(_friendly_error(e))
                     return
