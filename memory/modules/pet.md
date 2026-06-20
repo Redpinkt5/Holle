@@ -77,6 +77,7 @@ if ai is None:
 - **2026-06-21** `PetWindow.show_response_bubble` 支持 `append` 模式，`show_now_playing` 以追加方式合并到当前 AI 回复气泡，避免播放封面气泡瞬间覆盖文字回复
 - **2026-06-21** 修复 `append` 模式导致的死循环：改为 `merge` 模式，`BubbleManager` 记住最近一次纯 AI 回复，后续 now-playing 刷新只替换播放信息部分，不再重复追加整段内容
 - **2026-06-21** 用户切歌或自动切歌时，清除气泡中保留的 AI 回复文本，避免与新的正在播放信息冲突
+- **2026-06-21** 新增 `restore_playlist` 工具与 `/restore` 命令：用户可恢复原始完整歌单，退出当前歌手过滤模式
 
 ## 已知问题
 

@@ -23,6 +23,7 @@ metadata:
 ## 变更历史
 
 - **2026-06-20**: 新增 `CommandType.AI` 与 `/ai`、`ai` 映射，支持 `/ai <apikey>` 命令解析。
+- **2026-06-21**: 新增 `CommandType.RESTORE` 与 `/restore`、`restore` 映射，支持恢复原始完整歌单。
 
 ## 设计说明
 
