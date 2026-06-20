@@ -72,6 +72,7 @@ if ai is None:
 - **2026-06-20** 强化 DeepSeek/Ark 系统提示与搜索工具返回文本，要求 AI 在找到歌曲后必须调用 `play_song` 工具实际播放，避免只回复文本而不执行播放
 - **2026-06-20** 增加兜底逻辑：当 AI 只搜索不播放且用户话语明显带有播放意图时，自动从最近搜索结果中挑选最佳匹配并调用 `play_song`
 - **2026-06-21** 接入 `ai_memory` 模块：`pet/main.py` 在 AI 聊天前注入记忆上下文，回复后记录对话与播放决策；`ark_api.py` / `deepseek_api.py` 系统提示增加记忆使用说明
+- **2026-06-21** 为非 tool-calling 服务（MiniMax / OpenAICompatibleService）增加本地播放兜底：检测到播放意图后，先 `search_local` 再自动 `play_song`
 
 ## 已知问题
 
