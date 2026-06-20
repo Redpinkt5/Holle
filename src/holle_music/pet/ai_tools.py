@@ -191,6 +191,14 @@ class AITools:
         self._player.play_artist(artist)
         return f'已加载 {len(matches)} 首 "{artist}" 的歌曲，正在播放: {matches[0].get("title", "未知")}'
 
+    def _tool_restore_playlist(self, _args: dict) -> str:
+        """Restore the full original playlist."""
+        try:
+            self._player.restore_playlist()
+            return "已恢复全部歌单"
+        except Exception as exc:
+            return f"恢复歌单失败: {exc}"
+
     def _tool_toggle_play(self, _args: dict) -> str:
         """Toggle play / pause."""
         self._player.toggle_play()

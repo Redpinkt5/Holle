@@ -168,6 +168,22 @@ class TUITools:
         self._app._sync_playlist_selection()
         return f'已加载 {len(matches)} 首 "{artist}" 的歌曲，正在播放: {matches[0].title}'
 
+    def _tool_restore_playlist(self, _args: dict) -> str:
+        """Restore the full original playlist."""
+        songs = self._app._original_songs
+        if not songs:
+            return "没有可恢复的歌单"
+        self._app.player.load_playlist(songs)
+        self._app._displayed_songs = list(songs)
+        try:
+            from holle_music.widgets import PlaylistPanel
+            panel = self._app.query_one("#playlist-panel", PlaylistPanel)
+            panel.load_songs(songs)
+            panel.border_title = "✻ Playlist"
+        except Exception:
+            pass
+        return "已恢复全部歌单"
+
     def _tool_toggle_play(self, _args: dict) -> str:
         """Toggle play / pause."""
         self._app.action_toggle_play_pause()

@@ -98,6 +98,7 @@ class PetCommandHandler:
             "搜索": ("search", ""),
             "颜色": ("color", ""),
             "模式": ("mode", ""),
+            "恢复": ("restore", ""),
         }
 
         if text in shortcuts:
@@ -127,6 +128,8 @@ class PetCommandHandler:
             return self._cmd_ai(arg)
         if cmd == "aimodel":
             return self._cmd_aimodel(arg)
+        if cmd == "restore":
+            return self._cmd_restore()
         if cmd == "mode":
             return self._cmd_mode(arg)
         if cmd == "quit":
@@ -322,6 +325,14 @@ class PetCommandHandler:
         labels = {"sequential": "顺序播放", "random": "随机播放", "repeat": "单曲循环"}
         return f"播放模式已切换为: {labels.get(mode, mode)}"
 
+    def _cmd_restore(self) -> str:
+        """Restore the full original playlist after an artist filter."""
+        try:
+            self._player.restore_playlist()
+            return "已恢复全部歌单"
+        except Exception as exc:
+            return f"恢复歌单失败: {exc}"
+
     def _cmd_quit(self) -> str:
         try:
             self._window.close()
@@ -341,6 +352,7 @@ class PetCommandHandler:
             "/maincolor <light/dark> 切换主体配色\n"
             "/ai <API Key> 配置 AI\n"
             "/model <模型名> 切换 AI 模型\n"
+            "/restore 恢复全部歌单\n"
             "顺序 / 单曲 / 随机 切换播放模式\n"
             "quit 退出 | /help 帮助"
         )

@@ -291,6 +291,16 @@ class PetPlayer:
         self._standalone_player.load_playlist(typed_songs)
         self._original_songs = list(typed_songs)
 
+    def restore_playlist(self) -> None:
+        """Restore the full original playlist (e.g. after filtering by artist)."""
+        if not self._original_songs:
+            return
+        if self._is_main_app_running():
+            self._send_cmd("restore")
+        elif self._standalone_player is not None:
+            self._standalone_player.load_playlist(self._original_songs)
+            self._standalone_player._current_index = 0
+
     def _is_main_app_running(self) -> bool:
         if not self._state_file.exists():
             return False

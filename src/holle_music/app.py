@@ -47,6 +47,7 @@ class CommandType(Enum):
     COLOR = auto()
     AI = auto()
     MODEL = auto()
+    RESTORE = auto()
     UNKNOWN = auto()
 
 
@@ -93,6 +94,8 @@ COMMAND_MAP: dict[str, CommandType] = {
     "ai": CommandType.AI,
     "/model": CommandType.MODEL,
     "model": CommandType.MODEL,
+    "/restore": CommandType.RESTORE,
+    "restore": CommandType.RESTORE,
 }
 
 
@@ -570,6 +573,8 @@ class HolleMusicApp(App):
             elif cmd.startswith("play_artist:"):
                 artist = cmd[12:]
                 self._play_by_artist(artist)
+            elif cmd == "restore":
+                self._restore_playlist_display()
             elif cmd.startswith("volume:"):
                 try:
                     vol = int(cmd[7:]) / 100
@@ -945,6 +950,23 @@ class HolleMusicApp(App):
         )
 
     @staticmethod
+    def _should_restore(text: str) -> bool:
+        """Heuristically detect whether the user wants to restore the full playlist."""
+        return any(
+            kw in text
+            for kw in {
+                "恢复",
+                "还原",
+                "全部",
+                "原来的",
+                "完整",
+                "不想听",
+                "取消",
+                "退出",
+            }
+        )
+
+    @staticmethod
     def _auto_play_search_result(tools: Any, text: str, response: str, query: str = "") -> str:
         """Play the best matching search result when AI forgot to call play_song."""
         results = tools._last_search_results
@@ -1083,8 +1105,13 @@ class HolleMusicApp(App):
                 response = self._ai.chat(prompt)
 
                 # For plain-text services (MiniMax/OpenAI-compatible), the model
-                # cannot call tools. Detect playback intent and execute locally.
-                if self._should_auto_play(text):
+                # cannot call tools. Detect playback / restore intent and execute locally.
+                if self._should_restore(text):
+                    from holle_music.tui_tools import TUITools
+
+                    tools = TUITools(self)
+                    response = tools.execute("restore_playlist", {})
+                elif self._should_auto_play(text):
                     from holle_music.tui_tools import TUITools
 
                     tools = TUITools(self)
@@ -1227,6 +1254,8 @@ class HolleMusicApp(App):
                         self._notify_chat(f"模型已切换为: {model_name}")
                     except Exception as e:
                         self._notify_chat(f"模型切换失败: {e}")
+        elif cmd.type == CommandType.RESTORE:
+            self._restore_playlist_display()
         elif cmd.type == CommandType.UNKNOWN:
             self._notify_chat(f"未知命令: {cmd.args or '?'}")
 

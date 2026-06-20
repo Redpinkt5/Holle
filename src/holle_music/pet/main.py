@@ -321,9 +321,17 @@ def main() -> None:
                     else:
                         reply = ai.chat(message)
                         # For plain-text services (MiniMax/OpenAI-compatible), the
-                        # model cannot call tools. Detect playback intent and execute
-                        # search + play locally.
+                        # model cannot call tools. Detect playback / restore intent
+                        # and execute locally.
                         if any(
+                            kw in text
+                            for kw in (
+                                "恢复", "还原", "全部", "原来的", "完整",
+                                "不想听", "取消", "退出",
+                            )
+                        ):
+                            reply = tools.execute("restore_playlist", {})
+                        elif any(
                             kw in text
                             for kw in (
                                 "播放", "来一首", "听", "唱", "想听", "放",

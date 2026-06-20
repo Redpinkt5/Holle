@@ -119,6 +119,14 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "restore_playlist",
+            "description": "恢复原始完整播放列表（例如用户不想再听当前过滤后的歌手列表时）",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "toggle_play",
             "description": "播放/暂停切换",
             "parameters": {"type": "object", "properties": {}},
