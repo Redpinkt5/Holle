@@ -74,6 +74,7 @@ if ai is None:
 - **2026-06-21** 接入 `ai_memory` 模块：`pet/main.py` 在 AI 聊天前注入记忆上下文，回复后记录对话与播放决策；`ark_api.py` / `deepseek_api.py` 系统提示增加记忆使用说明
 - **2026-06-21** 为非 tool-calling 服务（MiniMax / OpenAICompatibleService）增加本地播放兜底：检测到播放意图后，先 `search_local` 再自动 `play_song`
 - **2026-06-21** 新增 `play_artist` 工具：播放某位歌手所有本地歌曲，并自动加载为当前播放列表；TUI 与 Pet 的兜底逻辑在检测到“播放某歌手的歌”时也会优先加载歌手全部歌曲
+- **2026-06-21** `PetWindow.show_response_bubble` 支持 `append` 模式，`show_now_playing` 以追加方式合并到当前 AI 回复气泡，避免播放封面气泡瞬间覆盖文字回复
 
 ## 已知问题
 
