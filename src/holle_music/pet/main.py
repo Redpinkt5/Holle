@@ -279,11 +279,17 @@ def main() -> None:
                 try:
                     if hasattr(ai, "submit_tool_results"):
                         current = ai.chat(message)
+                        played = False
                         for _ in range(5):
                             if current["type"] == "tool_calls":
                                 tool_results = []
                                 for call in current["calls"]:
                                     tool_result = tools.execute(call["name"], call["arguments"])
+                                    if (
+                                        call["name"] == "play_song"
+                                        and tool_result.startswith("正在播放")
+                                    ):
+                                        played = True
                                     tool_results.append((call["id"], tool_result))
                                 current = ai.submit_tool_results(tool_results)
                             elif current.get("content"):
@@ -291,6 +297,15 @@ def main() -> None:
                                 break
                             else:
                                 break
+
+                        # Fallback: if AI only searched but user clearly wants playback,
+                        # auto-play the best matching search result.
+                        if (
+                            not played
+                            and tools._last_search_results
+                            and any(kw in text for kw in ("播放", "来一首", "听", "唱", "想听", "放", "点一首", "来一曲", "给我听"))
+                        ):
+                            reply = tools.auto_play_best_match(text, reply or "")
                     else:
                         reply = ai.chat(message)
                 except Exception as e:

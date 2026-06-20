@@ -4,6 +4,7 @@ import threading
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
+from typing import Any
 
 from textual import on
 from textual.app import App, ComposeResult
@@ -900,6 +901,51 @@ class HolleMusicApp(App):
         except Exception:
             pass
 
+    @staticmethod
+    def _should_auto_play(text: str) -> bool:
+        """Heuristically detect whether the user wants to start playback."""
+        return any(
+            kw in text
+            for kw in {
+                "播放",
+                "来一首",
+                "听",
+                "唱",
+                "想听",
+                "放",
+                "点一首",
+                "来一曲",
+                "给我听",
+            }
+        )
+
+    @staticmethod
+    def _auto_play_search_result(tools: Any, text: str, response: str) -> str:
+        """Play the best matching search result when AI forgot to call play_song."""
+        results = tools._last_search_results
+        if not results:
+            return response
+
+        chosen = None
+        for source in (text, response):
+            source_lower = source.lower()
+            for song in results:
+                if (song.title or "").lower() in source_lower:
+                    chosen = song
+                    break
+            if chosen:
+                break
+
+        if not chosen:
+            chosen = results[0]
+
+        play_result = tools.execute("play_song", {"title": chosen.title})
+        if play_result.startswith("正在播放"):
+            if response:
+                return f"{response}\n\n{play_result}"
+            return play_result
+        return response
+
     def _chat_with_ai(self, text: str) -> None:
         """Send user message to AI with web search results or tool calling."""
         chat = self.query_one("#chat-bubbles", ChatBubbles)
@@ -932,6 +978,7 @@ class HolleMusicApp(App):
 
                     current = self._ai.chat(prompt)
                     response = ""
+                    played = False
                     for _ in range(5):
                         if current.get("type") == "tool_calls":
                             tool_results = []
@@ -939,6 +986,11 @@ class HolleMusicApp(App):
                                 tool_result = tools.execute(
                                     call["name"], call["arguments"]
                                 )
+                                if (
+                                    call["name"] == "play_song"
+                                    and tool_result.startswith("正在播放")
+                                ):
+                                    played = True
                                 tool_results.append((call["id"], tool_result))
                             current = self._ai.submit_tool_results(tool_results)
                         elif current.get("content"):
@@ -946,6 +998,18 @@ class HolleMusicApp(App):
                             break
                         else:
                             break
+
+                    # Fallback: if the AI only searched but didn't play, and the
+                    # user's message clearly asks for playback, auto-play the
+                    # best matching search result.
+                    if (
+                        not played
+                        and tools._last_search_results
+                        and self._should_auto_play(text)
+                    ):
+                        response = self._auto_play_search_result(
+                            tools, text, response
+                        )
 
                     self.call_from_thread(lambda: chat.add_ai_msg(response or "AI 没有返回内容"))
                     return

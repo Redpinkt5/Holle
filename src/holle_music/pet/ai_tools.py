@@ -48,6 +48,38 @@ class AITools:
         except Exception as exc:
             return f"执行失败: {exc}"
 
+    def auto_play_best_match(self, text: str, response: str = "") -> str:
+        """Pick the best matching recent search result and play it.
+
+        This is a fallback for when the AI searched but forgot to call
+        ``play_song``. Returns the original response with a playback note.
+        """
+        results = self._last_search_results
+        if not results:
+            return response
+
+        chosen = None
+        for source in (text, response):
+            source_lower = source.lower()
+            for song in results:
+                if (song.get("title") or "").lower() in source_lower:
+                    chosen = song
+                    break
+            if chosen:
+                break
+
+        if not chosen:
+            chosen = results[0]
+
+        play_result = self.execute(
+            "play_song", {"title": chosen.get("title", "")}
+        )
+        if play_result.startswith(("正在播放", "尝试播放")):
+            if response:
+                return f"{response}\n\n{play_result}"
+            return play_result
+        return response
+
     # ── Tool implementations ──────────────────────────────────────────────
 
     def _tool_search_local(self, args: dict) -> str:
