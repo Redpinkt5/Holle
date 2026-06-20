@@ -53,6 +53,8 @@ class BubbleManager:
         # Response state
         self._response_text: str = ""
         self._response_cover: Image.Image | None = None
+        self._last_ai_response: str = ""
+        self._merged: bool = False
 
         # Mode picker state
         self._mode_until: float = 0.0
@@ -241,30 +243,52 @@ class BubbleManager:
     # ── Response lifecycle ──────────────────────────────────────────────
 
     def queue_response(
-        self, text: str, cover: Image.Image | None = None, append: bool = False
+        self, text: str, cover: Image.Image | None = None, append: bool = False, merge: bool = False
     ) -> None:
         """Queue a response to be displayed on the next update cycle."""
         self._pending_response = text
         self._pending_cover = cover
         self._pending_append = append
+        self._pending_merge = merge
 
     @property
     def response_cover(self) -> Image.Image | None:
         return self._response_cover
 
-    def show_response(self, text: str, cover: Image.Image | None = None, append: bool = False) -> None:
+    def show_response(
+        self,
+        text: str,
+        cover: Image.Image | None = None,
+        append: bool = False,
+        merge: bool = False,
+    ) -> None:
         """Display a response bubble; it stays until explicitly dismissed.
 
         If ``append`` is True and a response bubble is already visible, the new
         text is appended to the existing one instead of replacing it.
+
+        If ``merge`` is True, the new text is merged with the last AI response
+        text. This is used to combine an AI reply with the subsequent
+        now-playing cover bubble while keeping the reply visible.
         """
         self.hide_input()
         self.hide_loading()
         self.hide_mode_picker()
+
+        if merge and self._last_ai_response:
+            text = f"{self._last_ai_response}\n\n{text}"
+            self._merged = True
+
         if append and self._state == "response" and self._response_text:
             self._response_text = f"{self._response_text}\n\n{text}"
         else:
             self._response_text = text
+
+        # Remember the last pure AI response so we can merge now-playing info later.
+        if not merge and not append:
+            self._last_ai_response = text
+            self._merged = False
+
         self._response_cover = cover
         self._state = "response"
 
@@ -277,6 +301,8 @@ class BubbleManager:
             self._state = "none"
         self._response_text = ""
         self._response_cover = None
+        self._last_ai_response = ""
+        self._merged = False
 
     # ── Loading lifecycle ───────────────────────────────────────────────
 
@@ -355,15 +381,17 @@ class BubbleManager:
 
         return changed
 
-    def take_pending_response(self) -> tuple[str | None, Image.Image | None, bool]:
-        """Return and clear any queued response text, cover and append flag."""
+    def take_pending_response(self) -> tuple[str | None, Image.Image | None, bool, bool]:
+        """Return and clear any queued response text, cover, append and merge flags."""
         text = self._pending_response
         cover = getattr(self, "_pending_cover", None)
         append = getattr(self, "_pending_append", False)
+        merge = getattr(self, "_pending_merge", False)
         self._pending_response = None
         self._pending_cover = None
         self._pending_append = False
-        return text, cover, append
+        self._pending_merge = False
+        return text, cover, append, merge
 
     # ── Backwards-compatible aliases ────────────────────────────────────
 

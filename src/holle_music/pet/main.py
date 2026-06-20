@@ -175,7 +175,7 @@ def main() -> None:
             except Exception:
                 pass
 
-        window.show_response_bubble("\n".join(lines), cover=cover, append=True)
+        window.show_response_bubble("\n".join(lines), cover=cover, merge=True)
 
     window = PetWindow(on_action=on_action, on_double_click=show_now_playing)
     window._on_player_state_check = lambda: player.is_playing
