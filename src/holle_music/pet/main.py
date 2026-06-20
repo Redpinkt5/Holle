@@ -116,10 +116,13 @@ def main() -> None:
         elif zone == "left":
             player.prev_track()
             if window._bubble.state == "response" and "正在播放" in (window._bubble.response_text or ""):
+                # Song changed by user: drop any stale AI reply text.
+                window._bubble._last_ai_response = ""
                 show_now_playing()
         elif zone == "right":
             player.next_track()
             if window._bubble.state == "response" and "正在播放" in (window._bubble.response_text or ""):
+                window._bubble._last_ai_response = ""
                 show_now_playing()
         elif zone == "top":
             new_mode = player.cycle_mode()
@@ -189,6 +192,8 @@ def main() -> None:
             window._bubble.state == "response"
             and "正在播放" in (window._bubble.response_text or "")
         ):
+            # Auto-advanced to a new song: clear stale AI reply text.
+            window._bubble._last_ai_response = ""
             show_now_playing()
 
     window.set_song_end_check(on_song_end_check)
