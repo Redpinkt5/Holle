@@ -567,6 +567,9 @@ class HolleMusicApp(App):
             elif cmd.startswith("play:"):
                 title = cmd[5:]
                 self._play_by_title(title)
+            elif cmd.startswith("play_artist:"):
+                artist = cmd[12:]
+                self._play_by_artist(artist)
             elif cmd.startswith("volume:"):
                 try:
                     vol = int(cmd[7:]) / 100
@@ -620,6 +623,26 @@ class HolleMusicApp(App):
                 self._notify_chat(f"正在播放: {s.title}")
                 return
         self._notify_chat(f"未找到歌曲: {title}")
+
+    def _play_by_artist(self, artist: str) -> None:
+        """Load all songs by an artist into the playlist and start playback."""
+        songs = self._original_songs or list(self.player.playlist)
+        matches = [s for s in songs if artist.lower() in (s.artist or "").lower()]
+        if not matches:
+            self._notify_chat(f'未找到歌手: {artist}')
+            return
+        self.player.load_playlist(matches)
+        self.player.play(matches[0])
+        self._displayed_songs = list(matches)
+        try:
+            panel = self.query_one("#playlist-panel", PlaylistPanel)
+            panel.load_songs(matches)
+            panel.border_title = f'✻ Playlist | 歌手: "{artist}"'
+        except Exception:
+            pass
+        self._update_controls_ui()
+        self._sync_playlist_selection()
+        self._notify_chat(f'已加载 {len(matches)} 首 "{artist}" 的歌曲')
 
     def _cycle_play_mode(self) -> None:
         modes = ["sequential", "random", "repeat"]
@@ -922,11 +945,23 @@ class HolleMusicApp(App):
         )
 
     @staticmethod
-    def _auto_play_search_result(tools: Any, text: str, response: str) -> str:
+    def _auto_play_search_result(tools: Any, text: str, response: str, query: str = "") -> str:
         """Play the best matching search result when AI forgot to call play_song."""
         results = tools._last_search_results
         if not results:
             return response
+
+        # If multiple results all match the query as an artist, load the artist playlist.
+        lowered_query = query.lower()
+        if (
+            len(results) > 1
+            and lowered_query
+            and all(
+                lowered_query in (getattr(song, "artist", "") or "").lower()
+                for song in results
+            )
+        ):
+            return tools.execute("play_artist", {"artist": query})
 
         chosen = None
         for source in (text, response):
@@ -1010,8 +1045,9 @@ class HolleMusicApp(App):
                         and tools._last_search_results
                         and self._should_auto_play(text)
                     ):
+                        query = TUITools.extract_play_query(text)
                         response = self._auto_play_search_result(
-                            tools, text, response
+                            tools, text, response, query=query
                         )
 
                     # Persist conversation to memory.
@@ -1056,7 +1092,9 @@ class HolleMusicApp(App):
                     if query:
                         tools.execute("search_local", {"query": query})
                         if tools._last_search_results:
-                            response = tools.auto_play_best_match(text, response or "")
+                            response = self._auto_play_search_result(
+                                tools, text, response or "", query=query
+                            )
 
                 self._memory.record(MemoryKind.CONVERSATION, f"用户: {text}", importance=0.3)
                 if response:

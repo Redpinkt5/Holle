@@ -102,6 +102,23 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "play_artist",
+            "description": "播放某位歌手的全部本地歌曲",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "artist": {
+                        "type": "string",
+                        "description": "歌手名",
+                    },
+                },
+                "required": ["artist"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "toggle_play",
             "description": "播放/暂停切换",
             "parameters": {"type": "object", "properties": {}},

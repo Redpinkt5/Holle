@@ -140,6 +140,34 @@ class TUITools:
 
         return f"未找到歌曲: {title}" + (f" - {artist}" if artist else "")
 
+    def _tool_play_artist(self, args: dict) -> str:
+        """Play all songs by a given artist."""
+        artist = args.get("artist", "").strip()
+        if not artist:
+            return "歌手名为空"
+
+        songs = list(self._app._original_songs or self._app.player.playlist or [])
+        matches = [
+            s for s in songs
+            if artist.lower() in (s.artist or "").lower()
+        ]
+        if not matches:
+            return f'本地未找到歌手 "{artist}"'
+
+        self._app.player.load_playlist(matches)
+        self._app.player.play(matches[0])
+        self._app._displayed_songs = list(matches)
+        try:
+            from holle_music.widgets import PlaylistPanel
+            panel = self._app.query_one("#playlist-panel", PlaylistPanel)
+            panel.load_songs(matches)
+            panel.border_title = f'✻ Playlist | 歌手: "{artist}"'
+        except Exception:
+            pass
+        self._app._update_controls_ui()
+        self._app._sync_playlist_selection()
+        return f'已加载 {len(matches)} 首 "{artist}" 的歌曲，正在播放: {matches[0].title}'
+
     def _tool_toggle_play(self, _args: dict) -> str:
         """Toggle play / pause."""
         self._app.action_toggle_play_pause()

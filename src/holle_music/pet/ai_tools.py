@@ -60,7 +60,7 @@ class AITools:
             query = query.replace(word, "")
         return query.strip()
 
-    def auto_play_best_match(self, text: str, response: str = "") -> str:
+    def auto_play_best_match(self, text: str, response: str = "", query: str = "") -> str:
         """Pick the best matching recent search result and play it.
 
         This is a fallback for when the AI searched but forgot to call
@@ -69,6 +69,18 @@ class AITools:
         results = self._last_search_results
         if not results:
             return response
+
+        # If multiple results all match the query as an artist, load the artist playlist.
+        lowered_query = query.lower()
+        if (
+            len(results) > 1
+            and lowered_query
+            and all(
+                lowered_query in (song.get("artist") or "").lower()
+                for song in results
+            )
+        ):
+            return self.execute("play_artist", {"artist": query})
 
         chosen = None
         for source in (text, response):
@@ -160,6 +172,24 @@ class AITools:
             payload["artist"] = artist
         self._player.play_song(payload)
         return f"尝试播放: {title}" + (f" - {artist}" if artist else "")
+
+    def _tool_play_artist(self, args: dict) -> str:
+        """Play all songs by a given artist."""
+        artist = args.get("artist", "").strip()
+        if not artist:
+            return "歌手名为空"
+
+        state = self._player.get_state()
+        playlist = state.get("playlist", [])
+        matches = [
+            s for s in playlist
+            if artist.lower() in (s.get("artist") or "").lower()
+        ]
+        if not matches:
+            return f'本地未找到歌手 "{artist}"'
+
+        self._player.play_artist(artist)
+        return f'已加载 {len(matches)} 首 "{artist}" 的歌曲，正在播放: {matches[0].get("title", "未知")}'
 
     def _tool_toggle_play(self, _args: dict) -> str:
         """Toggle play / pause."""

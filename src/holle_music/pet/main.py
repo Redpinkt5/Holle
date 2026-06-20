@@ -311,7 +311,8 @@ def main() -> None:
                             and tools._last_search_results
                             and any(kw in text for kw in ("播放", "来一首", "听", "唱", "想听", "放", "点一首", "来一曲", "给我听"))
                         ):
-                            reply = tools.auto_play_best_match(text, reply or "")
+                            query = tools.extract_play_query(text)
+                            reply = tools.auto_play_best_match(text, reply or "", query=query)
                     else:
                         reply = ai.chat(message)
                         # For plain-text services (MiniMax/OpenAI-compatible), the
@@ -328,7 +329,7 @@ def main() -> None:
                             if query:
                                 tools.execute("search_local", {"query": query})
                                 if tools._last_search_results:
-                                    reply = tools.auto_play_best_match(text, reply or "")
+                                    reply = tools.auto_play_best_match(text, reply or "", query=query)
                 except Exception as e:
                     window.show_response_bubble(_friendly_error(e))
                     return

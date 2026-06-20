@@ -181,6 +181,20 @@ class PetPlayer:
             except Exception:
                 pass
 
+    def play_artist(self, artist: str) -> None:
+        """Play all songs by an artist, via IPC if the main app is running, else standalone."""
+        state = self.get_state()
+        playlist = state.get("playlist", [])
+        matches = [s for s in playlist if artist.lower() in (s.get("artist") or "").lower()]
+        if not matches:
+            return
+        if self._is_main_app_running():
+            self._send_cmd(f"play_artist:{artist}")
+        elif self._standalone_player is not None:
+            typed = [s if isinstance(s, Song) else Song(**s) for s in matches]
+            self._standalone_player.load_playlist(typed)
+            self._standalone_player.play(typed[0])
+
     def set_volume_pct(self, volume: int) -> None:
         """Set volume by percentage (0-100)."""
         if self._is_main_app_running():
