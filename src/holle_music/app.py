@@ -903,7 +903,7 @@ class HolleMusicApp(App):
         chat.add_user_msg(text)
         chat.set_pending()
 
-        if self._ai is None:
+        if self._ai is None or not getattr(self._ai, "is_configured", False):
             chat.add_ai_msg("请先使用 /ai <你的 API Key> 配置 AI")
             return
 

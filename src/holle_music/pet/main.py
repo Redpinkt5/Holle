@@ -259,6 +259,10 @@ def main() -> None:
 
                 message = f"{time_ctx}\n\n{text}"
 
+                if not getattr(ai, "is_configured", False):
+                    window.show_response_bubble("请先使用 /ai <你的 API Key> 配置 AI")
+                    return
+
                 reply = None
                 try:
                     if hasattr(ai, "submit_tool_results"):
