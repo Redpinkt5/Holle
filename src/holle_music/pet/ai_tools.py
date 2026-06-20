@@ -80,6 +80,7 @@ class AITools:
             lines.append(f"{i}. {title} - {artist}")
         if len(results) > 10:
             lines.append(f"... 还有 {len(results) - 10} 首")
+        lines.append("如果用户想播放其中一首，请调用 play_song 工具实际播放。")
         return "\n".join(lines)
 
     def _tool_search_web(self, args: dict) -> str:

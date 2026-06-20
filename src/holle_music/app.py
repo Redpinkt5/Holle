@@ -925,6 +925,9 @@ class HolleMusicApp(App):
 
                     tools = TUITools(self)
                     prompt_parts = [time_ctx, song_ctx, f"用户指令: {text}"]
+                    prompt_parts.append(
+                        "如果这条指令涉及播放、暂停、切歌、调节音量或切换播放模式，请先调用对应的工具执行，不要只回复文本。"
+                    )
                     prompt = "\n\n".join(filter(None, prompt_parts))
 
                     current = self._ai.chat(prompt)
