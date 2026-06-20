@@ -1046,6 +1046,18 @@ class HolleMusicApp(App):
                 prompt = "\n\n".join(filter(None, prompt_parts))
                 response = self._ai.chat(prompt)
 
+                # For plain-text services (MiniMax/OpenAI-compatible), the model
+                # cannot call tools. Detect playback intent and execute locally.
+                if self._should_auto_play(text):
+                    from holle_music.tui_tools import TUITools
+
+                    tools = TUITools(self)
+                    query = TUITools.extract_play_query(text)
+                    if query:
+                        tools.execute("search_local", {"query": query})
+                        if tools._last_search_results:
+                            response = tools.auto_play_best_match(text, response or "")
+
                 self._memory.record(MemoryKind.CONVERSATION, f"用户: {text}", importance=0.3)
                 if response:
                     self._memory.record(

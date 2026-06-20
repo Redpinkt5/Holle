@@ -48,6 +48,18 @@ class AITools:
         except Exception as exc:
             return f"执行失败: {exc}"
 
+    @staticmethod
+    def extract_play_query(text: str) -> str:
+        """Strip playback-intent words to leave an artist or song title query."""
+        noise = {
+            "播放", "来一首", "听", "唱", "想听", "放", "点一首",
+            "来一曲", "给我听", "一下", "呗", "的", "歌", "曲",
+        }
+        query = text
+        for word in noise:
+            query = query.replace(word, "")
+        return query.strip()
+
     def auto_play_best_match(self, text: str, response: str = "") -> str:
         """Pick the best matching recent search result and play it.
 

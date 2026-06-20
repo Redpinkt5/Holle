@@ -33,6 +33,44 @@ class TUITools:
         except Exception as exc:
             return f"执行失败: {exc}"
 
+    @staticmethod
+    def extract_play_query(text: str) -> str:
+        """Strip playback-intent words to leave an artist or song title query."""
+        noise = {
+            "播放", "来一首", "听", "唱", "想听", "放", "点一首",
+            "来一曲", "给我听", "一下", "呗", "的", "歌", "曲",
+        }
+        query = text
+        for word in noise:
+            query = query.replace(word, "")
+        return query.strip()
+
+    def auto_play_best_match(self, text: str, response: str = "") -> str:
+        """Play the best matching recent search result when AI forgot to call play_song."""
+        results = self._last_search_results
+        if not results:
+            return response
+
+        chosen = None
+        for source in (text, response):
+            source_lower = source.lower()
+            for song in results:
+                if (song.title or "").lower() in source_lower:
+                    chosen = song
+                    break
+            if chosen:
+                break
+
+        if not chosen:
+            chosen = results[0]
+
+        play_result = self.execute("play_song", {"title": chosen.title})
+        if play_result.startswith("正在播放"):
+            if response:
+                return f"{response}\n\n{play_result}"
+            return play_result
+        return response
+
     def _tool_search_local(self, args: dict) -> str:
         """Search the current playlist for matching songs."""
         query = args.get("query", "").strip().lower()

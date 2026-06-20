@@ -314,6 +314,21 @@ def main() -> None:
                             reply = tools.auto_play_best_match(text, reply or "")
                     else:
                         reply = ai.chat(message)
+                        # For plain-text services (MiniMax/OpenAI-compatible), the
+                        # model cannot call tools. Detect playback intent and execute
+                        # search + play locally.
+                        if any(
+                            kw in text
+                            for kw in (
+                                "播放", "来一首", "听", "唱", "想听", "放",
+                                "点一首", "来一曲", "给我听",
+                            )
+                        ):
+                            query = tools.extract_play_query(text)
+                            if query:
+                                tools.execute("search_local", {"query": query})
+                                if tools._last_search_results:
+                                    reply = tools.auto_play_best_match(text, reply or "")
                 except Exception as e:
                     window.show_response_bubble(_friendly_error(e))
                     return
