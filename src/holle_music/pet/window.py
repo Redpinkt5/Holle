@@ -126,11 +126,13 @@ class PetWindow:
             self._main_color = color
             self._update_display()
 
-    def show_response_bubble(self, text: str, cover: Image.Image | None = None) -> None:
+    def show_response_bubble(
+        self, text: str, cover: Image.Image | None = None, append: bool = False
+    ) -> None:
         """Queue an AI response bubble to be shown in main loop."""
         # A new response overrides the middle-click exit confirmation.
         self._exit_confirm_pending = False
-        self._bubble.queue_response(text, cover)
+        self._bubble.queue_response(text, cover, append=append)
 
     def show_status_message(self, text: str) -> None:
         """Show a status message without replacing a loading/thinking bubble.
@@ -149,10 +151,11 @@ class PetWindow:
         result = self._bubble.take_pending_response()
         text = result[0] if isinstance(result, tuple) else result
         cover = result[1] if isinstance(result, tuple) else None
+        append = result[2] if isinstance(result, tuple) and len(result) > 2 else False
         if text:
             self._log_error(f"[bubble] pending response received, len={len(text)}")
             if win32gui:
-                self._bubble.show_response(text, cover)
+                self._bubble.show_response(text, cover, append=append)
                 self._log_error("[bubble] show_response called")
                 # Force a redraw so the response appears immediately.
                 self._update_display()

@@ -240,23 +240,33 @@ class BubbleManager:
 
     # ── Response lifecycle ──────────────────────────────────────────────
 
-    def queue_response(self, text: str, cover: Image.Image | None = None) -> None:
+    def queue_response(
+        self, text: str, cover: Image.Image | None = None, append: bool = False
+    ) -> None:
         """Queue a response to be displayed on the next update cycle."""
         self._pending_response = text
         self._pending_cover = cover
+        self._pending_append = append
 
     @property
     def response_cover(self) -> Image.Image | None:
         return self._response_cover
 
-    def show_response(self, text: str, cover: Image.Image | None = None) -> None:
-        """Display a response bubble; it stays until explicitly dismissed."""
+    def show_response(self, text: str, cover: Image.Image | None = None, append: bool = False) -> None:
+        """Display a response bubble; it stays until explicitly dismissed.
+
+        If ``append`` is True and a response bubble is already visible, the new
+        text is appended to the existing one instead of replacing it.
+        """
         self.hide_input()
         self.hide_loading()
         self.hide_mode_picker()
-        self._state = "response"
-        self._response_text = text
+        if append and self._state == "response" and self._response_text:
+            self._response_text = f"{self._response_text}\n\n{text}"
+        else:
+            self._response_text = text
         self._response_cover = cover
+        self._state = "response"
 
     def hide_response(self) -> None:
         """Close the response bubble immediately."""
@@ -345,13 +355,15 @@ class BubbleManager:
 
         return changed
 
-    def take_pending_response(self) -> tuple[str | None, Image.Image | None]:
-        """Return and clear any queued response text and cover."""
+    def take_pending_response(self) -> tuple[str | None, Image.Image | None, bool]:
+        """Return and clear any queued response text, cover and append flag."""
         text = self._pending_response
         cover = getattr(self, "_pending_cover", None)
+        append = getattr(self, "_pending_append", False)
         self._pending_response = None
         self._pending_cover = None
-        return text, cover
+        self._pending_append = False
+        return text, cover, append
 
     # ── Backwards-compatible aliases ────────────────────────────────────
 
