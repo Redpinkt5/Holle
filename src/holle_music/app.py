@@ -43,8 +43,9 @@ class CommandType(Enum):
     QUIT = auto()
     SEARCH = auto()
     COLOR = auto()
-    UNKNOWN = auto()
     AI = auto()
+    MODEL = auto()
+    UNKNOWN = auto()
 
 
 @dataclass
@@ -88,6 +89,8 @@ COMMAND_MAP: dict[str, CommandType] = {
     "color": CommandType.COLOR,
     "/ai": CommandType.AI,
     "ai": CommandType.AI,
+    "/model": CommandType.MODEL,
+    "model": CommandType.MODEL,
 }
 
 
@@ -898,7 +901,7 @@ class HolleMusicApp(App):
             pass
 
     def _chat_with_ai(self, text: str) -> None:
-        """Send user message to AI with web search results."""
+        """Send user message to AI with web search results or tool calling."""
         chat = self.query_one("#chat-bubbles", ChatBubbles)
         chat.add_user_msg(text)
         chat.set_pending()
@@ -916,7 +919,35 @@ class HolleMusicApp(App):
                 time_ctx = f"当前系统时间: {now}。"
                 song_ctx = f"当前播放歌曲: {song.title} - {song.artist}。" if song else ""
 
-                # 联网搜索（实时信息、天气、新闻等）
+                # Tool-calling services (DeepSeek/Ark) can control the player directly.
+                if hasattr(self._ai, "submit_tool_results"):
+                    from holle_music.tui_tools import TUITools
+
+                    tools = TUITools(self)
+                    prompt_parts = [time_ctx, song_ctx, f"用户指令: {text}"]
+                    prompt = "\n\n".join(filter(None, prompt_parts))
+
+                    current = self._ai.chat(prompt)
+                    response = ""
+                    for _ in range(5):
+                        if current.get("type") == "tool_calls":
+                            tool_results = []
+                            for call in current["calls"]:
+                                tool_result = tools.execute(
+                                    call["name"], call["arguments"]
+                                )
+                                tool_results.append((call["id"], tool_result))
+                            current = self._ai.submit_tool_results(tool_results)
+                        elif current.get("content"):
+                            response = current["content"]
+                            break
+                        else:
+                            break
+
+                    self.call_from_thread(lambda: chat.add_ai_msg(response or "AI 没有返回内容"))
+                    return
+
+                # Non-tool services: do a manual web search and return a chat reply.
                 try:
                     results = self._ai.search_web(text)
                 except Exception:
@@ -987,6 +1018,7 @@ class HolleMusicApp(App):
                 "/search <关键词>  搜索歌曲\n"
                 "/color <颜色>  选择闪烁颜色\n"
                 "/ai <API Key>  配置 AI\n"
+                "/model <模型名>  切换 AI 模型\n"
                 "顺序⭢ 单曲⟳ 随机↬ | 空格 暂停\n"
                 "/quit  退出"
             )
@@ -1034,10 +1066,32 @@ class HolleMusicApp(App):
                     self.call_from_thread(lambda: self._finish_ai_setup(provider, key))
 
                 threading.Thread(target=_detect, daemon=True).start()
+        elif cmd.type == CommandType.MODEL:
+            model_name = (cmd.args or "").strip()
+            if not model_name:
+                current = load_settings().get("ai_model", "默认")
+                self._notify_chat(f"当前模型: {current} | 用法: /model <模型名>")
+            else:
+                settings = load_settings()
+                provider = settings.get("ai_provider")
+                api_key = settings.get("ai_api_key")
+                if not provider or not api_key:
+                    self._notify_chat("请先使用 /ai <你的 API Key> 配置 AI")
+                else:
+                    set_setting("ai_model", model_name)
+                    try:
+                        from holle_music.ai_provider import create_ai_service
+
+                        self._ai = create_ai_service(api_key, provider, model_name)
+                        self._notify_chat(f"模型已切换为: {model_name}")
+                    except Exception as e:
+                        self._notify_chat(f"模型切换失败: {e}")
         elif cmd.type == CommandType.UNKNOWN:
             self._notify_chat(f"未知命令: {cmd.args or '?'}")
 
-    def _finish_ai_setup(self, provider: str | None, key: str) -> None:
+    def _finish_ai_setup(
+        self, provider: str | None, key: str, model: str | None = None
+    ) -> None:
         """Complete /ai setup on the main thread after provider detection."""
         from holle_music.ai_provider import PROVIDERS, create_ai_service
 
@@ -1049,10 +1103,11 @@ class HolleMusicApp(App):
         set_setting("ai_provider", provider)
         set_setting("ai_api_key", key)
         set_setting("ai_base_url", config["base_url"])
-        set_setting("ai_model", config["model"])
+        set_setting("ai_model", model or config["model"])
         try:
-            self._ai = create_ai_service(key, provider)
-            self._notify_chat(f"AI 已配置为: {provider}")
+            self._ai = create_ai_service(key, provider, model)
+            model_label = model or config["model"]
+            self._notify_chat(f"AI 已配置为: {provider} / {model_label}")
         except Exception as e:
             self._notify_chat(f"AI 初始化失败: {e}")
 

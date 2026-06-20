@@ -222,7 +222,19 @@ def main() -> None:
         )
 
     # AI chat handling
-    command_handler = PetCommandHandler(player, tools, window)
+    def _set_ai_service(
+        provider: str, api_key: str, model: str | None = None
+    ) -> tuple[bool, str | None]:
+        nonlocal ai
+        try:
+            ai = create_ai_service(api_key, provider, model)
+            return True, None
+        except Exception as exc:
+            return False, str(exc)
+
+    command_handler = PetCommandHandler(
+        player, tools, window, ai_config_callback=_set_ai_service
+    )
 
     def on_chat_send(text: str) -> None:
         if not text:

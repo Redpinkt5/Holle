@@ -264,7 +264,9 @@ class DeepSeekService:
     def _add_user_message(self, message: str) -> None:
         self._chat_history.append({"role": "user", "content": message})
 
-    def _add_assistant_message(self, content: str = "", tool_calls: list | None = None) -> None:
+    def _add_assistant_message(
+        self, content: str = "", tool_calls: list[dict] | None = None
+    ) -> None:
         msg: dict = {"role": "assistant"}
         if content:
             msg["content"] = content
@@ -280,6 +282,21 @@ class DeepSeekService:
                 "content": result,
             }
         )
+
+    @staticmethod
+    def _tool_calls_to_dicts(tool_calls) -> list[dict]:
+        """Convert raw tool call objects to API-serializable dicts for history."""
+        return [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments,
+                },
+            }
+            for tc in tool_calls
+        ]
 
     def _trim_history(self) -> None:
         """Keep at most max_history rounds (user + assistant pairs)."""
@@ -332,7 +349,9 @@ class DeepSeekService:
                         "arguments": tc.function.arguments,
                     }
                 )
-            self._add_assistant_message(tool_calls=msg.tool_calls)
+            self._add_assistant_message(
+                tool_calls=self._tool_calls_to_dicts(msg.tool_calls)
+            )
             return {"type": "tool_calls", "calls": tool_calls}
 
         # Plain text reply
@@ -378,7 +397,9 @@ class DeepSeekService:
                         "arguments": tc.function.arguments,
                     }
                 )
-            self._add_assistant_message(tool_calls=msg.tool_calls)
+            self._add_assistant_message(
+                tool_calls=self._tool_calls_to_dicts(msg.tool_calls)
+            )
             return {"type": "tool_calls", "calls": tool_calls}
 
         content = msg.content or ""
@@ -424,7 +445,9 @@ class DeepSeekService:
                         "arguments": tc.function.arguments,
                     }
                 )
-            self._add_assistant_message(tool_calls=msg.tool_calls)
+            self._add_assistant_message(
+                tool_calls=self._tool_calls_to_dicts(msg.tool_calls)
+            )
             return {"type": "tool_calls", "calls": tool_calls}
 
         content = msg.content or ""

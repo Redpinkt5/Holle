@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
+from holle_music.ai_provider import (
+    PROVIDERS,
+    create_ai_service,
+    detect_provider,
+    parse_ai_args,
+)
 from holle_music.scanner import Scanner
 from holle_music.settings import set_setting
 from holle_music.shared import set_shimmer_palette
@@ -17,10 +24,18 @@ class PetCommandHandler:
     forwarded to the AI chat handler.
     """
 
-    def __init__(self, player: Any, tools: Any, window: Any) -> None:
+    def __init__(
+        self,
+        player: Any,
+        tools: Any,
+        window: Any,
+        ai_config_callback: Callable[[str, str, str | None], tuple[bool, str | None]]
+        | None = None,
+    ) -> None:
         self._player = player
         self._tools = tools
         self._window = window
+        self._ai_config_callback = ai_config_callback
 
     def try_handle(self, text: str) -> tuple[bool, str]:
         """Try to handle ``text`` as a command.
@@ -55,6 +70,9 @@ class PetCommandHandler:
             parts = rest.split(None, 1)
             cmd = parts[0].lower() if parts else ""
             arg = parts[1] if len(parts) > 1 else ""
+            # /model selects the AI model; /mode selects the play mode.
+            if cmd == "model":
+                cmd = "aimodel"
             return cmd, arg
 
         # Single-character / keyword shortcuts
@@ -105,6 +123,10 @@ class PetCommandHandler:
             return self._cmd_color(arg)
         if cmd == "maincolor":
             return self._cmd_maincolor(arg)
+        if cmd == "ai":
+            return self._cmd_ai(arg)
+        if cmd == "aimodel":
+            return self._cmd_aimodel(arg)
         if cmd == "mode":
             return self._cmd_mode(arg)
         if cmd == "quit":
@@ -225,6 +247,60 @@ class PetCommandHandler:
             pass
         return f"主颜色已切换为: {name}"
 
+    def _cmd_ai(self, arg: str) -> str:
+        """Handle /ai <apikey> to configure the shared AI provider."""
+        key = arg.strip()
+        if not key:
+            return "用法: /ai <你的 API Key>"
+
+        def _detect_and_set():
+            provider = detect_provider(key)
+            if not provider:
+                self._window.show_response_bubble("无法识别该 API Key 对应的供应商，请检查 key 是否正确")
+                return
+
+            config = PROVIDERS[provider]
+            model = config["model"]
+            set_setting("ai_provider", provider)
+            set_setting("ai_api_key", key)
+            set_setting("ai_base_url", config["base_url"])
+            set_setting("ai_model", model)
+
+            if self._ai_config_callback is not None:
+                ok, err = self._ai_config_callback(provider, key, None)
+                if ok:
+                    self._window.show_response_bubble(f"AI 已配置为: {provider} / {model}")
+                else:
+                    self._window.show_response_bubble(f"AI 初始化失败: {err}")
+            else:
+                self._window.show_response_bubble(f"AI 已配置为: {provider} / {model}")
+
+        threading.Thread(target=_detect_and_set, daemon=True).start()
+        return "正在识别供应商..."
+
+    def _cmd_aimodel(self, arg: str) -> str:
+        """Handle /model <model> to switch the AI model."""
+        model_name = arg.strip()
+        if not model_name:
+            from holle_music.settings import load_settings
+            current = load_settings().get("ai_model", "默认")
+            return f"当前模型: {current} | 用法: /model <模型名>"
+
+        from holle_music.settings import load_settings
+        settings = load_settings()
+        provider = settings.get("ai_provider")
+        api_key = settings.get("ai_api_key")
+        if not provider or not api_key:
+            return "请先使用 /ai <你的 API Key> 配置 AI"
+
+        set_setting("ai_model", model_name)
+        if self._ai_config_callback is not None:
+            ok, err = self._ai_config_callback(provider, api_key, model_name)
+            if ok:
+                return f"模型已切换为: {model_name}"
+            return f"模型切换失败: {err}"
+        return f"模型已切换为: {model_name}"
+
     def _cmd_mode(self, arg: str) -> str:
         arg = arg.strip().lower()
         aliases = {
@@ -263,6 +339,8 @@ class PetCommandHandler:
             "/search <关键词> 搜索本地歌曲\n"
             "/color <颜色> 切换闪烁颜色\n"
             "/maincolor <light/dark> 切换主体配色\n"
+            "/ai <API Key> 配置 AI\n"
+            "/model <模型名> 切换 AI 模型\n"
             "顺序 / 单曲 / 随机 切换播放模式\n"
             "quit 退出 | /help 帮助"
         )

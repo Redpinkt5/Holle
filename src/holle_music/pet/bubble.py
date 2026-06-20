@@ -42,6 +42,7 @@ class BubbleManager:
         self._input_history: list[str] = []
         self._history_index: int = -1  # -1 means current (not yet submitted) input
         self._history_draft: str = ""
+        self._input_selection: tuple[int, int] | None = None  # (start, end) exclusive
 
         # Loading state
         self._loading_frame: int = 0
@@ -113,6 +114,7 @@ class BubbleManager:
         self.hide_mode_picker()
         self._state = "input"
         self._input_text = ""
+        self._input_selection = None
         self._input_focused = True
         self._cursor_visible = True
         self._last_cursor_toggle = time.monotonic()
@@ -122,6 +124,7 @@ class BubbleManager:
         if self._state == "input":
             self._state = "none"
             self._input_focused = False
+            self._input_selection = None
 
     def toggle_input(self) -> None:
         """Open the input bubble if closed, or close it if already open."""
@@ -130,17 +133,70 @@ class BubbleManager:
         else:
             self.show_input()
 
+    @property
+    def input_selection(self) -> tuple[int, int] | None:
+        """Return the current text selection as (start, end) or None."""
+        return self._input_selection
+
+    @property
+    def input_selected_text(self) -> str:
+        """Return the currently selected text, or all text if selection covers all."""
+        if self._input_selection is None:
+            return ""
+        start, end = self._input_selection
+        return self._input_text[start:end]
+
+    def input_select_all(self) -> None:
+        """Select all text in the input bubble."""
+        if self._state != "input" or not self._input_text:
+            return
+        self._input_selection = (0, len(self._input_text))
+
+    def input_copy(self) -> str:
+        """Return the text that should be copied to the clipboard."""
+        if self._state != "input":
+            return ""
+        if self._input_selection is not None:
+            return self.input_selected_text
+        return self._input_text
+
     def input_append(self, char: str) -> None:
         """Append a typed character to the input text."""
         if self._state != "input":
             return
         # Ignore control characters that slip through WM_CHAR
-        if char.isprintable():
+        if not char.isprintable():
+            return
+        if self._input_selection is not None:
+            self._input_text = char
+            self._input_selection = None
+        else:
             self._input_text += char
+
+    def input_paste(self, text: str) -> None:
+        """Paste clipboard text into the input bubble."""
+        if self._state != "input":
+            return
+        # Only accept printable text; strip carriage returns.
+        cleaned = "".join(
+            ch
+            for ch in text.replace("\r\n", "\n").replace("\r", "\n")
+            if ch.isprintable() or ch == "\n"
+        )
+        if self._input_selection is not None:
+            self._input_text = cleaned
+            self._input_selection = None
+        else:
+            self._input_text += cleaned
 
     def input_backspace(self) -> None:
         """Remove the last character from the input text."""
-        if self._state == "input" and self._input_text:
+        if self._state != "input" or not self._input_text:
+            return
+        if self._input_selection is not None:
+            self._input_text = ""
+            self._input_selection = None
+        else:
             self._input_text = self._input_text[:-1]
 
     def input_history_up(self) -> bool:

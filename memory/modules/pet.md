@@ -68,7 +68,8 @@ if ai is None:
 ## 变更历史
 
 - **2026-06-20** 接入共享 AI 配置：从 `settings.json` 读取 `ai_provider`/`ai_api_key`，支持多服务商切换，回退 ArkService
+- **2026-06-20** 修复 `AITools.execute`/`TUITools.execute` 未将 DeepSeek 返回的 JSON 字符串参数解析为 dict 的问题，使本地搜索、播放控制等工具在 DeepSeek 服务下正常工作
 
 ## 已知问题
 
-- 暂无
+- `AITools.execute` 与 `TUITools.execute` 已兼容 dict 和 JSON 字符串两种参数形式，但调用方仍应优先传递 dict；Ark 服务已在内部完成解析。

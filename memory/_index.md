@@ -15,8 +15,8 @@
 |---|---|---|---|---|
 | settings | [`modules/project_settings.md`](modules/project_settings.md) | 已上线 | 2026-06-20 | 用户配置持久化，v0.3.0 迁移到 `~/.holle_music/settings.json` |
 | commands | [`modules/commands.md`](modules/commands.md) | 已上线 | 2026-06-20 | 命令解析器，支持 /ai 等新命令 |
-| ai_provider | [`modules/project_ai_provider.md`](modules/project_ai_provider.md) | 已上线 | 2026-06-20 | AI 供应商自动识别与 `/ai` 命令配置 |
-| pet | [`modules/pet.md`](modules/pet.md) | 已上线 | 2026-06-20 | 桌面宠物，支持多服务商 AI 聊天与播放控制 |
+| ai_provider | [`modules/project_ai_provider.md`](modules/project_ai_provider.md) | 已上线 | 2026-06-20 | AI 供应商自动识别与 `/ai` 命令配置，服务工厂支持可选模型参数 |
+| pet | [`modules/pet.md`](modules/pet.md) | 已上线 | 2026-06-20 | 桌面宠物，修复 AI tool-calling 参数 JSON 字符串解析问题 |
 <!-- INDEX:MODULES:END -->
 
 ### 1.2 参考类记忆
@@ -33,6 +33,7 @@
 <!-- INDEX:BUGS:START -->
 | 坑 | 路径 | 触发条件 | 一句话规则 |
 |---|---|---|---|
+| AI 工具参数格式不一致 | [`bugs/ai_tool_arguments_json.md`](bugs/ai_tool_arguments_json.md) | DeepSeek 等 OpenAI SDK 返回 function arguments 为 JSON 字符串 | 工具执行器入口必须兼容 `str` 和 `dict` 两种参数 |
 <!-- INDEX:BUGS:END -->
 
 ---

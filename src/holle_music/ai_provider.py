@@ -9,6 +9,7 @@ __all__ = [
     "PROVIDERS",
     "detect_provider",
     "create_ai_service",
+    "parse_ai_args",
     "OpenAICompatibleService",
 ]
 
@@ -131,20 +132,42 @@ def detect_provider(api_key: str) -> str | None:
     return None
 
 
-def create_ai_service(api_key: str, provider: str):
+def parse_ai_args(arg: str) -> tuple[str | None, str, str | None]:
+    """Parse the argument string for the /ai command.
+
+    Supports three forms:
+      - <api_key>                     (auto-detect provider, use default model)
+      - <provider> <api_key>          (use provider's default model)
+      - <provider> <api_key> <model>  (explicit model override)
+
+    Returns (provider_or_none, api_key, model_or_none).
+    """
+    parts = arg.split()
+    if len(parts) == 1:
+        return None, parts[0], None
+    if len(parts) == 2:
+        return parts[0], parts[1], None
+    if len(parts) >= 3:
+        return parts[0], parts[1], parts[2]
+    return None, "", None
+
+
+def create_ai_service(api_key: str, provider: str, model: str | None = None):
     """Create an AI service instance for the given provider."""
     if provider not in PROVIDERS:
         raise ValueError(f"Unknown AI provider: {provider}")
 
     config = PROVIDERS[provider]
+    base_url = config["base_url"]
+    model = model or config["model"]
 
     if provider == "minimax":
         from holle_music.minimax_api import MiniMaxService
 
         return MiniMaxService(
             api_key=api_key,
-            base_url=config["base_url"],
-            model=config["model"],
+            base_url=base_url,
+            model=model,
         )
 
     if provider == "ark":
@@ -152,8 +175,8 @@ def create_ai_service(api_key: str, provider: str):
 
         return ArkService(
             api_key=api_key,
-            base_url=config["base_url"],
-            model=config["model"],
+            base_url=base_url,
+            model=model,
         )
 
     if provider == "deepseek":
@@ -161,15 +184,15 @@ def create_ai_service(api_key: str, provider: str):
 
         return DeepSeekService(
             api_key=api_key,
-            base_url=config["base_url"],
-            model=config["model"],
+            base_url=base_url,
+            model=model,
         )
 
     # Generic OpenAI-compatible providers: OpenAI, SiliconFlow, Kimi, Qwen, Zhipu.
     return OpenAICompatibleService(
         api_key=api_key,
-        base_url=config["base_url"],
-        model=config["model"],
+        base_url=base_url,
+        model=model,
     )
 
 

@@ -23,7 +23,7 @@ metadata:
 |---|---|---|
 | `PROVIDERS` | `dict[str, dict[str, Any]]` | 供应商配置表，含 `base_url` / `model` / `test_endpoint` |
 | `detect_provider(api_key)` | `str \| None` | 按优先级发送轻量请求探测供应商；空/纯空白 key 返回 `None` |
-| `create_ai_service(api_key, provider)` | 服务实例 | 根据供应商创建 `MiniMaxService` / `ArkService` / `DeepSeekService` / `OpenAICompatibleService` |
+| `create_ai_service(api_key, provider, model=None)` | 服务实例 | 根据供应商创建服务；`model` 为空时使用供应商默认模型 |
 | `OpenAICompatibleService` | class | 通用 OpenAI-compatible 聊天服务，提供 `chat` / `query_once` / `search_web` / `clear_history` |
 
 ## 支持的供应商
@@ -53,7 +53,7 @@ metadata:
 ## 变更历史
 
 - **2026-06-20 (v0.3.0+)**：创建模块，实现 `PROVIDERS`、`detect_provider`、`create_ai_service`、`OpenAICompatibleService`。
-- **2026-06-20**：修复 `detect_provider` 对含空白 key 的处理；`_retry` 每次尝试前都等待 rate-limit；补 `__all__`。
+- **2026-06-20**：`create_ai_service` 支持可选 `model` 参数，用于 `/model <模型名>` 切换模型。
 
 ## 已知问题
 

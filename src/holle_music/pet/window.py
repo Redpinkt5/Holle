@@ -12,11 +12,13 @@ from typing import Callable
 
 try:
     import win32api
+    import win32clipboard
     import win32con
     import win32gui
     import win32ui
 except ImportError:  # pragma: no cover
     win32api = None  # type: ignore[assignment]
+    win32clipboard = None  # type: ignore[assignment]
     win32con = None  # type: ignore[assignment]
     win32gui = None  # type: ignore[assignment]
     win32ui = None  # type: ignore[assignment]
@@ -375,6 +377,34 @@ class PetWindow:
 
         if msg == win32con.WM_KEYDOWN:
             if self._bubble.state == "input":
+                ctrl = bool(win32api.GetAsyncKeyState(win32con.VK_CONTROL) & 0x8000)
+                if ctrl and wparam == ord("V"):
+                    if win32clipboard is not None:
+                        try:
+                            win32clipboard.OpenClipboard()
+                            data = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
+                            win32clipboard.CloseClipboard()
+                            if data:
+                                self._bubble.input_paste(str(data))
+                                self._update_display()
+                        except Exception:
+                            pass
+                    return 0
+                if ctrl and wparam == ord("C"):
+                    if win32clipboard is not None:
+                        try:
+                            text = self._bubble.input_copy()
+                            win32clipboard.OpenClipboard()
+                            win32clipboard.EmptyClipboard()
+                            win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
+                            win32clipboard.CloseClipboard()
+                        except Exception:
+                            pass
+                    return 0
+                if ctrl and wparam == ord("A"):
+                    self._bubble.input_select_all()
+                    self._update_display()
+                    return 0
                 if wparam == win32con.VK_BACK:
                     self._bubble.input_backspace()
                     self._update_display()
@@ -529,7 +559,19 @@ class PetWindow:
             return 0
 
         if msg == win32con.WM_RBUTTONUP:
-            self._show_context_menu()
+            if self._bubble.state == "input":
+                if win32clipboard is not None:
+                    try:
+                        win32clipboard.OpenClipboard()
+                        data = win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
+                        win32clipboard.CloseClipboard()
+                        if data:
+                            self._bubble.input_paste(str(data))
+                            self._update_display()
+                    except Exception:
+                        pass
+            else:
+                self._show_context_menu()
             return 0
 
         if msg == win32con.WM_TIMER:
@@ -862,7 +904,9 @@ class PetWindow:
 
         if self._bubble.state == "input":
             bubble_image = self._bubble_renderer.render_input_bubble(
-                self._bubble.input_text, self._bubble.cursor_visible
+                self._bubble.input_text,
+                self._bubble.cursor_visible,
+                self._bubble.input_selection,
             )
             # Center horizontally over the mascot content; place above/below
             # based on vertical screen position, with a small gap from the pet.

@@ -166,6 +166,7 @@ class BubbleRenderer:
         self,
         text: str,
         cursor_visible: bool = True,
+        selection: tuple[int, int] | None = None,
         height: int = 40,
         max_width: int = 320,
         min_width: int = 120,
@@ -178,6 +179,7 @@ class BubbleRenderer:
         Args:
             text: Current input text.
             cursor_visible: Whether to draw the text cursor.
+            selection: Optional (start, end) selection range to highlight.
             height: Bubble height in pixels.
             max_width: Maximum bubble width in pixels.
             min_width: Minimum bubble width in pixels.
@@ -198,6 +200,22 @@ class BubbleRenderer:
 
         x = PADDING
         y = (height - FONT_SIZE) // 2
+
+        # Draw selection highlight behind the text.
+        if text and selection is not None:
+            start, end = sorted(selection)
+            start = max(0, min(start, len(text)))
+            end = max(0, min(end, len(text)))
+            if end > start:
+                sel_x = x + self._text_width_mixed(text[:start], FONT_SIZE)
+                sel_w = self._text_width_mixed(text[start:end], FONT_SIZE)
+                sel_top = y - 2
+                sel_bottom = y + FONT_SIZE + 2
+                draw.rectangle(
+                    [(sel_x, sel_top), (sel_x + sel_w, sel_bottom)],
+                    fill=ACCENT_COLOR + (180,),
+                )
+
         if text:
             drawn_w = self._draw_text_mixed(draw, (x, y), text, FONT_SIZE, TEXT_COLOR)
         else:
