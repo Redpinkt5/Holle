@@ -220,7 +220,7 @@ TOOLS: list[dict[str, Any]] = [
                 "properties": {
                     "color": {
                         "type": "string",
-                        "description": "颜色名，例如 pink / blue / red / green / yellow / purple / orange / gray / brown / black / white / colorful",
+                        "description": "颜色名，例如 pink / blue / red / green / yellow / purple / orange / gray / brown / white / colorful",
                     },
                 },
                 "required": ["color"],

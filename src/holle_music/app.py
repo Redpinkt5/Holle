@@ -1199,7 +1199,7 @@ class HolleMusicApp(App):
             if not name:
                 self._notify_chat(
                     f"当前: {get_shimmer_palette()} | "
-                    "可选: pink yellow red blue purple green orange gray brown black white colorful")
+                    "可选: pink yellow red blue purple green orange gray brown white colorful")
             elif set_shimmer_palette(name):
                 self._save_color_setting(name)
                 try:
