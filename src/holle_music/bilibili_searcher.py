@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -29,11 +31,6 @@ try:
 except ImportError:
     DDGS = None
 
-# yt_dlp for metadata extraction and download
-try:
-    import yt_dlp  # noqa: F401
-except ImportError:
-    yt_dlp = None
 
 
 def _extract_bvid(url: str) -> str | None:
@@ -54,6 +51,7 @@ class BilibiliSearcher:
     def __init__(self, progress_callback: Callable[[str], None] | None = None) -> None:
         self._progress_callback = progress_callback
         self._cancel_event = threading.Event()
+        self._download_procs: dict[str, subprocess.Popen] = {}
 
     def search(self, query: str, max_results: int = 10) -> list[Song]:
         """Search Bilibili and return Song objects."""
@@ -91,8 +89,10 @@ class BilibiliSearcher:
 
     def _song_from_url(self, url: str) -> Song | None:
         """Use yt-dlp to fetch metadata for a Bilibili URL."""
-        if yt_dlp is None:
-            return None
+        try:
+            import yt_dlp
+        except ImportError as exc:
+            raise RuntimeError("yt-dlp 未安装") from exc
 
         bvid = _extract_bvid(url)
         if not bvid:
@@ -142,38 +142,51 @@ class BilibiliSearcher:
             return cached
 
         self._notify(f"正在下载: {song.title}")
-        if yt_dlp is None:
-            raise RuntimeError("yt-dlp 未安装")
+
+        try:
+            import yt_dlp
+        except ImportError as exc:
+            raise RuntimeError("yt-dlp 未安装") from exc
 
         cache_dir()
-        outtmpl = str(CACHE_DIR / f"{song.bvid}_0.%(ext)s")
-        ydl_opts = {
-            "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "outtmpl": outtmpl,
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": True,
-        }
+        out_path = str(CACHE_DIR / f"{song.bvid}_0.m4a")
+        part_path = out_path + ".part"
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                url = song.web_url or f"https://www.bilibili.com/video/{song.bvid}"
-                ydl.download([url])
-            except Exception as exc:
-                if self._cancel_event.is_set():
-                    raise RuntimeError("下载已取消") from exc
-                raise RuntimeError(f"下载失败: {exc}") from exc
+        url = song.web_url or f"https://www.bilibili.com/video/{song.bvid}"
+        cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "--format", "bestaudio[ext=m4a]/bestaudio/best",
+            "--output", part_path,
+            "--quiet", "--no-warnings", "--no-progress",
+            url,
+        ]
+
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self._download_procs[song.bvid] = proc
+
+        try:
+            stdout, stderr = proc.communicate()
+            if self._cancel_event.is_set():
+                raise RuntimeError("下载已取消")
+            if proc.returncode != 0:
+                raise RuntimeError(f"下载失败: {stderr.decode() or 'yt-dlp exited non-zero'}")
+        finally:
+            self._download_procs.pop(song.bvid, None)
+
+        # Rename .part to final
+        import os
+        if os.path.exists(part_path):
+            os.rename(part_path, out_path)
+        elif not os.path.exists(out_path):
+            # yt-dlp might output with different extension
+            for p in CACHE_DIR.glob(f"{song.bvid}_0.*"):
+                if p.suffix not in (".json", ".part"):
+                    out_path = str(p)
+                    break
 
         cached = audio_path(song.bvid)
         if not cached:
-            candidates = [
-                p for p in CACHE_DIR.glob(f"{song.bvid}_0.*")
-                if p.suffix not in (".json", ".part")
-            ]
-            if candidates:
-                cached = candidates[0]
-            else:
-                raise RuntimeError("下载后未找到音频文件")
+            raise RuntimeError("下载后未找到音频文件")
 
         save_metadata(
             song.bvid,
@@ -192,6 +205,9 @@ class BilibiliSearcher:
     def cancel(self) -> None:
         """Signal in-flight search/download to stop."""
         self._cancel_event.set()
+        for proc in list(self._download_procs.values()):
+            proc.kill()
+        self._download_procs.clear()
 
     def _notify(self, msg: str) -> None:
         if self._progress_callback:
