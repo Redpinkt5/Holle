@@ -412,6 +412,56 @@ class DeepSeekService:
             for tc in tool_calls
         ]
 
+    def _validate_history(self) -> None:
+        """Ensure every assistant message with tool_calls is immediately followed by
+        matching tool messages, and no user message appears while tool_calls
+        are unresolved. Raises RuntimeError on corruption."""
+        i = 0
+        while i < len(self._chat_history):
+            m = self._chat_history[i]
+            if m.get("tool_calls"):
+                # This assistant has tool_calls — collect their IDs
+                expected_ids = {tc["id"] for tc in m["tool_calls"]}
+                # Next messages must be matching tool messages in order
+                j = i + 1
+                found_ids: set[str] = set()
+                while j < len(self._chat_history):
+                    next_m = self._chat_history[j]
+                    if next_m["role"] == "assistant" and next_m.get("tool_calls"):
+                        # Another assistant appeared before all tool calls were responded to
+                        raise RuntimeError(
+                            f"History corrupted: assistant with tool_calls at index {i} "
+                            f"(ids={expected_ids}) is not followed by its tool messages. "
+                            f"Found unexpected assistant at index {j}. "
+                            f"History length={len(self._chat_history)}"
+                        )
+                    if next_m["role"] == "tool":
+                        found_ids.add(next_m.get("tool_call_id", ""))
+                        expected_ids.discard(next_m.get("tool_call_id", ""))
+                        if not expected_ids:
+                            # All tool calls answered, stop checking
+                            break
+                    elif next_m["role"] == "user":
+                        # User message before all tool calls were answered
+                        raise RuntimeError(
+                            f"History corrupted: user message at index {j} interrupts "
+                            f"unanswered tool_calls {expected_ids} from assistant at {i}. "
+                            f"History length={len(self._chat_history)}"
+                        )
+                    else:
+                        # text assistant - tool calls are answered
+                        break
+                    j += 1
+                if expected_ids:
+                    raise RuntimeError(
+                        f"History corrupted: assistant with tool_calls at index {i} "
+                        f"has {len(expected_ids)} unanswered tool_calls: {expected_ids}. "
+                        f"History length={len(self._chat_history)}"
+                    )
+                i = j
+            else:
+                i += 1
+
     def _trim_history(self) -> None:
         """Keep at most max_history rounds (user + assistant pairs).
 
@@ -450,6 +500,7 @@ class DeepSeekService:
         self._ensure_system_prompt()
         self._add_user_message(message)
         self._trim_history()
+        self._validate_history()  # crash early if history is malformed
 
         def _call():
             resp = self.client.chat.completions.create(
@@ -549,21 +600,7 @@ class DeepSeekService:
 
         for tool_call_id, result in results:
             self._add_tool_message(tool_call_id, result)
-
-        # Validate: after adding tool results, any assistant(tc) that is NOT the
-        # last message must be followed by at least one "tool" role message.
-        # If not, history is corrupted (e.g., previous API call failed and left
-        # an orphaned assistant(tc)). Raise early to get a clear error instead
-        # of a cryptic API rejection.
-        for i, m in enumerate(self._chat_history):
-            if m.get("tool_calls") and i + 1 < len(self._chat_history):
-                next_msgs = self._chat_history[i + 1 :]
-                if not any(n.get("role") == "tool" for n in next_msgs):
-                    raise RuntimeError(
-                        "Chat history corrupted: assistant message with tool_calls "
-                        f"at index {i} is not followed by any tool messages. "
-                        f"History: {self._chat_history!r}"
-                    )
+        self._validate_history()  # crash early if history is malformed
 
         def _call():
             resp = self.client.chat.completions.create(
