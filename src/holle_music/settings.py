@@ -21,6 +21,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "main_color": "light",
     "current_song_path": "",
     "current_song_title": "",
+    "bilibili_cache_max_mb": 1024,
+    "bilibili_cache_max_files": 200,
 }
 
 

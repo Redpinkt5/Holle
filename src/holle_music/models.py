@@ -13,6 +13,10 @@ class Song:
     artist: str = "未知艺术家"
     album: str = "未知专辑"
     duration: float = 0.0
+    source: str = "local"
+    bvid: str = ""
+    web_url: str = ""
+    cover_url: str = ""
 
     def __post_init__(self):
         if isinstance(self.path, str):
