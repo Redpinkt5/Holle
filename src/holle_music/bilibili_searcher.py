@@ -6,6 +6,8 @@ import re
 import subprocess
 import sys
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote, unquote, urlparse
@@ -68,24 +70,35 @@ class BilibiliSearcher:
         return songs
 
     def _search_urls(self, query: str, max_results: int) -> list[str]:
-        """Use DuckDuckGo to find Bilibili video URLs."""
+        """Use DuckDuckGo to find Bilibili video URLs (10 s timeout)."""
         if DDGS is None:
             raise RuntimeError("ddgs 未安装")
 
-        try:
-            results = []
+        def _do_search() -> list[dict]:
             with DDGS() as ddgs:
-                for r in ddgs.text(f"{query} site:bilibili.com/video", max_results=max_results * 2):
-                    href = r.get("href", "")
-                    if _extract_bvid(href):
-                        results.append(href)
-                    if len(results) >= max_results:
-                        break
-            return results
+                return list(
+                    ddgs.text(f"{query} site:bilibili.com/video", max_results=max_results * 2)
+                )
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_do_search)
+                entries = future.result(timeout=10)
+        except FuturesTimeoutError:
+            raise RuntimeError("搜索超时，请检查网络或稍后重试") from None
         except Exception as exc:
             if self._cancel_event.is_set():
                 return []
             raise RuntimeError(f"搜索失败: {exc}") from exc
+
+        results: list[str] = []
+        for r in entries:
+            href = r.get("href", "")
+            if _extract_bvid(href):
+                results.append(href)
+            if len(results) >= max_results:
+                break
+        return results
 
     def _song_from_url(self, url: str) -> Song | None:
         """Use yt-dlp to fetch metadata for a Bilibili URL."""
