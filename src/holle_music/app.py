@@ -29,6 +29,13 @@ from holle_music.widgets import (
     restart_active_shimmers,
 )
 from holle_music.settings import load_settings, set_setting
+from holle_music.bilibili_searcher import BilibiliSearcher, is_network_error
+from holle_music.online_cache import (
+    audio_path,
+    cache_info,
+    clear as clear_cache,
+    is_cached,
+)
 
 
 class CommandType(Enum):
@@ -48,6 +55,7 @@ class CommandType(Enum):
     AI = auto()
     MODEL = auto()
     RESTORE = auto()
+    CACHE = auto()
     UNKNOWN = auto()
 
 
@@ -96,6 +104,8 @@ COMMAND_MAP: dict[str, CommandType] = {
     "model": CommandType.MODEL,
     "/restore": CommandType.RESTORE,
     "restore": CommandType.RESTORE,
+    "/cache": CommandType.CACHE,
+    "cache": CommandType.CACHE,
 }
 
 
@@ -360,6 +370,11 @@ class HolleMusicApp(App):
         self._current_music_dir = load_settings().get("music_dir", "E:/Music")
         self.player.set_play_mode(load_settings().get("play_mode", "sequential"))
         self.player.on_song_change(self._on_song_changed)
+        self._bilibili_searcher = BilibiliSearcher(
+            progress_callback=lambda msg: self.call_from_thread(lambda: self._notify_chat(msg))
+        )
+        self._online_download_pool: list[threading.Thread] = []
+        self._online_search_thread: threading.Thread | None = None
 
     def _init_ai_service(self):
         """Initialize AI service from saved settings, or None if not configured."""
@@ -799,6 +814,15 @@ class HolleMusicApp(App):
         if idx == self.player.current_index:
             return
         song = songs[idx]
+
+        if song.source == "bilibili":
+            if not is_cached(song.bvid):
+                self._notify_chat(f"{song.title} 正在下载中...")
+                return
+            cached = audio_path(song.bvid)
+            if cached:
+                song.path = cached
+
         self.player.play(song)
         self._update_controls_ui()
 
@@ -1222,6 +1246,14 @@ class HolleMusicApp(App):
 
         elif cmd.type == CommandType.SEARCH:
             self._search_songs(cmd.args)
+        elif cmd.type == CommandType.CACHE:
+            arg = (cmd.args or "").strip().lower()
+            if arg in ("clear", "清空"):
+                clear_cache()
+                self._notify_chat("已清空 B 站缓存")
+            else:
+                info = cache_info()
+                self._notify_chat(f"B 站缓存: {info['size_mb']} MB，{info['file_count']} 个文件")
         elif cmd.type == CommandType.QUIT:
             self.exit()
         elif cmd.type == CommandType.AI:
@@ -1297,25 +1329,79 @@ class HolleMusicApp(App):
 
     def _search_songs(self, query: str) -> None:
         q = query.strip().lower()
-        # 从原始完整列表搜索，避免在搜索结果上二次搜索
         all_songs = self._original_songs or self.player.playlist
-        if not all_songs:
-            self._notify_chat("播放列表为空")
-            return
+
         if not q:
             self._restore_playlist_display()
             return
+
         results = [s for s in all_songs if q in s.title.lower() or q in s.artist.lower()]
-        self._displayed_songs = results
         if results:
-            # 将搜索结果设为当前播放列表
+            self._displayed_songs = results
             self.player.load_playlist(results)
             panel = self.query_one("#playlist-panel", PlaylistPanel)
             panel.load_songs(results)
             panel.border_title = f'✻ Playlist | 搜索: "{query}"'
             self._notify_chat(f'搜索 "{query}" — {len(results)} 首')
-        else:
-            self._notify_chat(f'未找到 "{query}"')
+            return
+
+        # Local empty: search Bilibili.
+        self._cancel_online_search()
+        self._notify_chat(f'本地未找到 "{query}"，正在搜索 Bilibili...')
+
+        def _do_search():
+            try:
+                songs = self._bilibili_searcher.search(query, max_results=10)
+                if not songs:
+                    self.call_from_thread(
+                        lambda: self._notify_chat(f'本地和 B 站都未找到 "{query}"')
+                    )
+                    return
+                self.call_from_thread(lambda: self._on_bilibili_results(query, songs))
+            except Exception as exc:
+                msg = "无法连接网络搜索 B 站" if is_network_error(exc) else f"B 站搜索失败: {exc}"
+                self.call_from_thread(lambda: self._notify_chat(f'本地未找到 "{query}"，{msg}。'))
+
+        self._online_search_thread = threading.Thread(target=_do_search, daemon=True)
+        self._online_search_thread.start()
+
+    def _on_bilibili_results(self, query: str, songs: list[Song]) -> None:
+        self._displayed_songs = list(songs)
+        self.player.load_playlist(songs)
+        panel = self.query_one("#playlist-panel", PlaylistPanel)
+        panel.load_songs(songs)
+        panel.border_title = f'✻ Playlist | B站: "{query}"'
+        self._notify_chat(f'B站搜索 "{query}" — {len(songs)} 首（正在后台下载）')
+        self._download_online_songs(songs)
+
+    def _download_online_songs(self, songs: list[Song], concurrency: int = 3) -> None:
+        """Download Bilibili songs in background with limited concurrency."""
+        self._cancel_online_downloads()
+        sem = threading.Semaphore(concurrency)
+
+        def _download_one(song: Song) -> None:
+            with sem:
+                try:
+                    self._bilibili_searcher.download_audio(song)
+                    cached = audio_path(song.bvid)
+                    if cached:
+                        song.path = cached
+                        self.call_from_thread(lambda: self._notify_chat(f"{song.title} 下载完成"))
+                except Exception as exc:
+                    msg = "下载失败，请检查网络" if is_network_error(exc) else str(exc)
+                    self.call_from_thread(lambda: self._notify_chat(f"{song.title} {msg}"))
+
+        for song in songs:
+            t = threading.Thread(target=_download_one, args=(song,), daemon=True)
+            self._online_download_pool.append(t)
+            t.start()
+
+    def _cancel_online_search(self) -> None:
+        if self._bilibili_searcher is not None:
+            self._bilibili_searcher.cancel()
+
+    def _cancel_online_downloads(self) -> None:
+        self._online_download_pool.clear()
 
     def _save_color_setting(self, name: str) -> None:
         set_setting("color", name)
