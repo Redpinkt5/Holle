@@ -72,18 +72,25 @@ class BilibiliSearcher:
         return self._song_from_url(url)
 
     def search(self, query: str, max_results: int = 10) -> list[Song]:
-        """Search Bilibili and return Song objects."""
+        """Search Bilibili and return Song objects.
+
+        Uses Bilibili API (via curl) for both search and metadata,
+        avoiding yt-dlp which may be blocked by HTTP 412.
+        Falls back to ddgs if Bilibili API returns nothing.
+        """
         self._cancel_event.clear()
 
-        urls = self._search_urls(query, max_results)
-        songs: list[Song] = []
-        for url in urls:
-            if self._cancel_event.is_set():
-                break
-            song = self._song_from_url(url)
-            if song:
-                songs.append(song)
+        songs = self._search_songs_from_api(query, max_results)
+        if songs:
+            return songs
+
+        # Fallback to ddgs
+        try:
+            songs = self._search_urls_ddgs(query, max_results)
+        except RuntimeError:
+            return []
         return songs
+
 
     def _search_urls(self, query: str, max_results: int) -> list[str]:
         """Search Bilibili via official API (fast, comprehensive).
@@ -125,12 +132,11 @@ class BilibiliSearcher:
                 break
         return results
 
-    def _search_urls_bilibili(self, query: str, max_results: int) -> list[str]:
-        """Search Bilibili official API using curl (works in restricted networks).
+    def _search_songs_from_api(self, query: str, max_results: int) -> list[Song]:
+        """Search Bilibili API and return Song objects with metadata from the API.
 
-        urllib cannot reach api.bilibili.com from some environments, but curl can.
-        Uses shell=True so curl inherits the system proxy from Windows.
-        Falls back to empty list if curl fails.
+        Uses curl (shell=True to inherit WinINET proxy). Does NOT use yt-dlp for search,
+        so it works even when yt-dlp is blocked by HTTP 412.
         """
         import json, subprocess
 
@@ -140,7 +146,7 @@ class BilibiliSearcher:
             f"?search_type=video&keyword={encoded_query}&page=1&pagesize={max_results}"
         )
         cmd = (
-            f'curl -s -m 10 '
+            f'curl -s -m 12 '
             f'-H "User-Agent: Mozilla/5.0" '
             f'-H "Referer: https://www.bilibili.com/" '
             f'"{url}"'
@@ -163,73 +169,68 @@ class BilibiliSearcher:
         if data.get("code") != 0:
             return []
 
-        results: list[str] = []
+        songs: list[Song] = []
         for item in (data.get("data", {}).get("result") or []):
             bvid = item.get("bvid", "")
-            if bvid:
-                results.append(f"https://www.bilibili.com/video/{bvid}")
-            if len(results) >= max_results:
+            if not bvid:
+                continue
+            title = (item.get("title") or "").strip()
+            if not title:
+                continue
+            # Clean HTML tag from title (Bilibili returns <em class="keyword">)
+            import re as _re
+            title = _re.sub(r"<[^>]+>", "", title)
+            author = item.get("author", "未知UP主") or "未知UP主"
+            duration_secs = item.get("duration", 0)
+            # Duration format may be "3:45" or seconds
+            if isinstance(duration_secs, str):
+                parts = duration_secs.split(":")
+                try:
+                    if len(parts) == 2:
+                        duration_secs = int(parts[0]) * 60 + int(parts[1])
+                    elif len(parts) == 3:
+                        duration_secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    else:
+                        duration_secs = 0
+                except Exception:
+                    duration_secs = 0
+            else:
+                duration_secs = int(duration_secs) if duration_secs else 0
+            arcurl = item.get("arcurl", "") or ""
+            web_url = f"https://www.bilibili.com/video/{bvid}"
+            song = Song(
+                path=Path(""),
+                title=f"{title} (web)",
+                artist=author,
+                duration=float(duration_secs),
+                source="bilibili",
+                bvid=bvid,
+                web_url=web_url,
+                cover_url="",
+            )
+            songs.append(song)
+            if len(songs) >= max_results:
                 break
-        return results
+        return songs
 
     def _song_from_url(self, url: str) -> Song | None:
-        """Use yt-dlp to fetch metadata for a Bilibili URL.
+        """Resolve a single Bilibili URL to Song using curl + search API.
 
-        Returns None if video does not exist.
-        Raises RuntimeError if network is blocked (412/403) or yt-dlp is missing.
+        Does NOT use yt-dlp (yt-dlp is blocked by HTTP 412 in some networks).
+        Returns None if the URL is invalid or the network call fails.
         """
-        try:
-            import yt_dlp
-        except ImportError as exc:
-            raise RuntimeError("yt-dlp 未安装") from exc
-
         bvid = _extract_bvid(url)
         if not bvid:
             return None
+        # Use _search_songs_from_api but pass bvid as the query
+        # so it finds this exact video.
+        songs = self._search_songs_from_api(bvid, max_results=1)
+        for song in songs:
+            if song.bvid == bvid:
+                return song
+        return None
 
-        ydl_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "socket_timeout": 10,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(url, download=False)
-            except Exception as exc:
-                err_text = str(exc).lower()
-                # 412 / 403 = B站拒绝访问（IP受限或需登录）
-                if any(kw in err_text for kw in ("412", "403", "precondition failed",
-                                                  "http error 412", "http error 403",
-                                                  "precondition failed", "access denied")):
-                    raise RuntimeError(
-                        "B站无法访问（HTTP 412/403），可能是网络受限或需要登录。"
-                        "请尝试：1. 在浏览器中打开此链接确认可访问；2. 将视频页面截图发给我"
-                    ) from exc
-                # 其他错误（视频不存在、已删除等）→ 返回 None
-                return None
 
-            if not info:
-                return None
-
-            title = (info.get("title") or "").strip()
-            uploader = info.get("uploader") or "未知UP主"
-            duration = info.get("duration") or 0.0
-            thumbnails = info.get("thumbnails") or []
-            cover_url = thumbnails[-1].get("url", "") if thumbnails else ""
-
-            if not title:
-                return None
-
-            return Song(
-                path=Path(""),
-                title=f"{title} (web)",
-                artist=uploader,
-                duration=float(duration) if duration else 0.0,
-                source="bilibili",
-                bvid=bvid,
-                web_url=url,
-                cover_url=cover_url,
-            )
 
     def download_audio(self, song: Song) -> Path:
         """Download audio for a Song into cache and return local path."""
