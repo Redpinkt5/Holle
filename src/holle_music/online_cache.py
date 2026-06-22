@@ -120,23 +120,22 @@ def cleanup(max_mb: int | None = None, max_files: int | None = None) -> None:
     max_mb = max_mb if max_mb is not None else DEFAULT_MAX_MB
     max_files = max_files if max_files is not None else DEFAULT_MAX_FILES
 
-    while True:
+    files: list[tuple[int, Path]] = []
+    for p in _cache_audio_files():
+        stem = p.stem.split("_")[0]
+        meta = load_metadata(stem)
+        last_played = meta.get("last_played_at", 0) if meta else 0
+        files.append((last_played, p))
+
+    files.sort(key=lambda x: x[0])
+
+    while files:
         size_mb = _cache_size_mb()
         count = _cache_file_count()
         if size_mb <= max_mb and count <= max_files:
             break
-
-        files: list[tuple[int, Path]] = []
-        for p in _cache_audio_files():
-            stem = p.stem.split("_")[0]
-            meta = load_metadata(stem)
-            last_played = meta.get("last_played_at", 0) if meta else 0
-            files.append((last_played, p))
-
-        if not files:
-            break
-        files.sort(key=lambda x: x[0])
-        oldest_bvid = files[0][1].stem.split("_")[0]
+        oldest_last_played, oldest_path = files.pop(0)
+        oldest_bvid = oldest_path.stem.split("_")[0]
         _remove_bvid(oldest_bvid)
 
 
