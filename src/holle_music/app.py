@@ -375,6 +375,8 @@ class HolleMusicApp(App):
         )
         self._online_download_pool: list[threading.Thread] = []
         self._online_search_thread: threading.Thread | None = None
+        self._pending_play_bvid: str | None = None
+        self._pending_play_song: Song | None = None
 
     def _init_ai_service(self):
         """Initialize AI service from saved settings, or None if not configured."""
@@ -817,6 +819,9 @@ class HolleMusicApp(App):
 
         if song.source == "bilibili":
             if not is_cached(song.bvid):
+                # Register that when this bvid's download completes, play it
+                self._pending_play_bvid = song.bvid
+                self._pending_play_song = song
                 self._notify_chat(f"{song.title} 正在下载中...")
                 return
             cached = audio_path(song.bvid)
@@ -1389,6 +1394,15 @@ class HolleMusicApp(App):
                     if cached:
                         song.path = cached
                         self.call_from_thread(lambda: self._notify_chat(f"{song.title} 下载完成"))
+                        # Auto-play if this was the pending song
+                        if getattr(self, '_pending_play_bvid', None) == song.bvid:
+                            self.call_from_thread(lambda: (
+                                setattr(self, '_pending_play_bvid', None),
+                                setattr(self, '_pending_play_song', None),
+                                self.player.play(song),
+                                self._update_controls_ui(),
+                                self._sync_playlist_selection(),
+                            ))
                 except Exception as exc:
                     msg = "下载失败，请检查网络" if is_network_error(exc) else str(exc)
                     self.call_from_thread(lambda: self._notify_chat(f"{song.title} {msg}"))

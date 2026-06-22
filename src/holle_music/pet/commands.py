@@ -212,7 +212,9 @@ class PetCommandHandler:
 
         # Try local first.
         result = self._tools.execute("search_local", {"query": query})
-        if result and not result.startswith("本地未找到"):
+        # A result is "good" if it starts with a song indicator, not with an empty-message indicator
+        bad_prefixes = ("本地未找到", "当前播放列表为空", "播放列表为空", "未找到")
+        if result and not any(result.startswith(p) for p in bad_prefixes):
             return result
 
         # Fallback to Bilibili.

@@ -10,6 +10,7 @@ import json
 from typing import Any
 
 from holle_music.bilibili_searcher import BilibiliSearcher, is_network_error
+from holle_music.models import Song
 from holle_music.minimax_api import MiniMaxService
 
 
@@ -19,7 +20,7 @@ class TUITools:
     def __init__(self, app: Any) -> None:
         self._app = app
         self._last_search_results: list[dict] = []
-        self._last_bilibili_results: list = []
+        self._last_bilibili_results: list[Song] = []
 
     def execute(self, name: str, args: dict | str | None) -> str:
         """Dispatch a tool call by name and return a human-readable result."""
@@ -193,9 +194,11 @@ class TUITools:
         if is_cached(song.bvid):
             cached = audio_path(song.bvid)
             song.path = cached
-            self._app.player.play(song)
-            self._app._update_controls_ui()
-            self._app._sync_playlist_selection()
+            self._app.call_from_thread(lambda: (
+                self._app.player.play(song),
+                self._app._update_controls_ui(),
+                self._app._sync_playlist_selection(),
+            ))
             return f"正在播放: {song.title} - {song.artist}"
 
         self._app._notify_chat(f"{song.title} 正在下载...")
