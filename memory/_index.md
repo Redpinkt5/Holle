@@ -14,10 +14,12 @@
 | 模块 | 路径 | 状态 | 最后更新 | 一句话 |
 |---|---|---|---|---|
 | settings | [`modules/project_settings.md`](modules/project_settings.md) | 已上线 | 2026-06-20 | 用户配置持久化，v0.3.0 迁移到 `~/.holle_music/settings.json` |
-| commands | [`modules/commands.md`](modules/commands.md) | 已上线 | 2026-06-21 | 命令解析器，支持 /ai 等新命令 |
+| commands | [`modules/commands.md`](modules/commands.md) | 已上线 | 2026-06-22 | 命令解析器，支持 /ai 等新命令 |
 | ai_provider | [`modules/project_ai_provider.md`](modules/project_ai_provider.md) | 已上线 | 2026-06-21 | AI 供应商自动识别与 `/ai` 命令配置，服务工厂支持可选模型参数 |
-| pet | [`modules/pet.md`](modules/pet.md) | 已上线 | 2026-06-21 | 桌面宠物，含 AI tool-calling、播放兜底、记忆上下文注入 |
+| pet | [`modules/pet.md`](modules/pet.md) | 已上线 | 2026-06-22 | 桌面宠物，含 AI tool-calling、播放兜底、记忆上下文注入 |
 | ai_memory | [`modules/project_ai_memory.md`](modules/project_ai_memory.md) | 已上线 | 2026-06-21 | AI 助手持久化记忆（STM + LTM），支持 prompt 注入 |
+| bilibili_searcher | [`modules/bilibili_searcher.md`](modules/bilibili_searcher.md) | 已上线 | 2026-06-22 | Bilibili 音频搜索与下载 |
+| online_cache | [`modules/online_cache.md`](modules/online_cache.md) | 已上线 | 2026-06-22 | 在线音频缓存 LRU 管理 |
 <!-- INDEX:MODULES:END -->
 
 ### 1.2 参考类记忆

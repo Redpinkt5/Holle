@@ -25,6 +25,7 @@ metadata:
 - **2026-06-20**: 新增 `CommandType.AI` 与 `/ai`、`ai` 映射，支持 `/ai <apikey>` 命令解析。
 - **2026-06-21**: 新增 `CommandType.RESTORE` 与 `/restore`、`restore` 映射，支持恢复原始完整歌单。
 - **2026-06-21**: 所有 `/` 命令均已映射到 `CommandType`，并通过 AI 工具 / 纯文本意图兜底支持自然语言调用。
+- **2026-06-22**: 扩展 `/search`：本地无结果时自动搜索 Bilibili；新增 `/cache` / `/cache clear` 命令。
 
 ## 设计说明
 
