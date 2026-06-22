@@ -157,7 +157,11 @@ class BilibiliSearcher:
         return results
 
     def _song_from_url(self, url: str) -> Song | None:
-        """Use yt-dlp to fetch metadata for a Bilibili URL."""
+        """Use yt-dlp to fetch metadata for a Bilibili URL.
+
+        Returns None if video does not exist.
+        Raises RuntimeError if network is blocked (412/403) or yt-dlp is missing.
+        """
         try:
             import yt_dlp
         except ImportError as exc:
@@ -170,11 +174,22 @@ class BilibiliSearcher:
         ydl_opts = {
             "quiet": True,
             "no_warnings": True,
+            "socket_timeout": 10,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
                 info = ydl.extract_info(url, download=False)
-            except Exception:
+            except Exception as exc:
+                err_text = str(exc).lower()
+                # 412 / 403 = B站拒绝访问（IP受限或需登录）
+                if any(kw in err_text for kw in ("412", "403", "precondition failed",
+                                                  "http error 412", "http error 403",
+                                                  "precondition failed", "access denied")):
+                    raise RuntimeError(
+                        "B站无法访问（HTTP 412/403），可能是网络受限或需要登录。"
+                        "请尝试：1. 在浏览器中打开此链接确认可访问；2. 将视频页面截图发给我"
+                    ) from exc
+                # 其他错误（视频不存在、已删除等）→ 返回 None
                 return None
 
             if not info:

@@ -205,15 +205,39 @@ class AITools:
         return results
 
     def _tool_search_bilibili(self, args: dict) -> str:
-        """Search Bilibili for audio."""
+        """Search Bilibili for audio. Supports both keyword search and direct URL."""
         query = args.get("query", "").strip()
         if not query:
             return "搜索关键词为空"
 
+        # Check if query is a Bilibili URL — resolve directly instead of searching
+        from holle_music.bilibili_searcher import _extract_bvid
+        maybe_bvid = _extract_bvid(query)
+        if maybe_bvid:
+            # Direct URL: resolve it without going through the search pipeline
+            try:
+                song = self._bilibili_searcher.resolve_url(query)
+            except RuntimeError as exc:
+                # 412 / 403 / network blocked
+                return f"B 站无法访问（{exc}）。请确认视频链接在浏览器中可以打开，或尝试通过关键词搜索。"
+            except Exception as exc:
+                return f"B 站解析失败: {exc}"
+
+            if song is None:
+                return f'B 站链接 "{query}" 无法解析，可能视频不存在或已被删除。'
+
+            self._last_bilibili_results = [song]
+            self._last_search_results = [song]
+            return (
+                f'解析成功: {song.title} - {song.artist}\n'
+                f'可以直接说"播放"来开始播放。'
+            )
+
+        # Normal keyword search
         try:
             songs = self._bilibili_searcher.search(query, max_results=args.get("max_results", 10))
         except Exception as exc:
-            return "无法连接网络搜索 B 站" if is_network_error(exc) else f"B 站搜索失败: {exc}"
+            return "B 站搜索超时或无法连接，请稍后重试。" if is_network_error(exc) else f"B 站搜索失败: {exc}"
 
         self._last_bilibili_results = songs
         self._last_search_results = songs
