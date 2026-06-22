@@ -27,6 +27,7 @@ class AITools:
         self._window = window
         self._last_search_results: list[dict] = []
         self._last_bilibili_results: list[Song] = []
+        self._bilibili_searcher = BilibiliSearcher()
 
     def set_window(self, window: Any) -> None:
         """Set the pet window reference so color tools can trigger a redraw."""
@@ -210,8 +211,7 @@ class AITools:
             return "搜索关键词为空"
 
         try:
-            searcher = BilibiliSearcher()
-            songs = searcher.search(query, max_results=args.get("max_results", 10))
+            songs = self._bilibili_searcher.search(query, max_results=args.get("max_results", 10))
         except Exception as exc:
             return "无法连接网络搜索 B 站" if is_network_error(exc) else f"B 站搜索失败: {exc}"
 
@@ -250,8 +250,7 @@ class AITools:
 
         def _download_and_play():
             try:
-                searcher = BilibiliSearcher()
-                cached = searcher.download_audio(song)
+                cached = self._bilibili_searcher.download_audio(song)
                 song.path = cached
                 self._player.play_song({
                     "path": str(cached),
