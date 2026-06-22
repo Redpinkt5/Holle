@@ -55,6 +55,22 @@ class BilibiliSearcher:
         self._cancel_event = threading.Event()
         self._download_procs: dict[str, subprocess.Popen] = {}
 
+    def resolve_url(self, url_or_bvid: str) -> Song | None:
+        """Resolve a Bilibili URL or BV ID directly to a Song (no search needed).
+
+        Accepts:
+        - Full URL: https://www.bilibili.com/video/BV1gx411G7DN
+        - Short URL: https://b23.tv/xxxxx
+        - BV ID: BV1gx411G7DN
+        """
+        if not url_or_bvid:
+            return None
+        bvid = _extract_bvid(url_or_bvid)
+        if not bvid:
+            return None
+        url = f"https://www.bilibili.com/video/{bvid}"
+        return self._song_from_url(url)
+
     def search(self, query: str, max_results: int = 10) -> list[Song]:
         """Search Bilibili and return Song objects."""
         self._cancel_event.clear()
@@ -70,9 +86,18 @@ class BilibiliSearcher:
         return songs
 
     def _search_urls(self, query: str, max_results: int) -> list[str]:
-        """Use DuckDuckGo to find Bilibili video URLs (10 s timeout)."""
+        """Search Bilibili via official API (fast, comprehensive).
+
+        Falls back to DuckDuckGo only if Bilibili API fails.
+        """
+        # Try Bilibili official API first — it has complete coverage
+        urls = self._search_urls_bilibili(query, max_results)
+        if urls:
+            return urls
+
+        # Fallback to DuckDuckGo if Bilibili API is unavailable
         if DDGS is None:
-            raise RuntimeError("ddgs 未安装")
+            raise RuntimeError("搜索失败: 无法连接 Bilibili，且 ddgs 也未安装")
 
         def _do_search() -> list[dict]:
             with DDGS() as ddgs:
@@ -96,6 +121,37 @@ class BilibiliSearcher:
             href = r.get("href", "")
             if _extract_bvid(href):
                 results.append(href)
+            if len(results) >= max_results:
+                break
+        return results
+
+    def _search_urls_bilibili(self, query: str, max_results: int) -> list[str]:
+        """Search Bilibili official API (no auth required)."""
+        import json
+
+        import urllib.request
+
+        encoded_query = quote(query, safe="")
+        url = (
+            f"https://api.bilibili.com/x/web-interface/search/type"
+            f"?search_type=video&keyword={encoded_query}&page=1&pagesize={max_results}"
+        )
+
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            return []
+
+        if data.get("code") != 0:
+            return []
+
+        results: list[str] = []
+        for item in (data.get("data", {}).get("result") or []):
+            bvid = item.get("bvid", "")
+            if bvid:
+                results.append(f"https://www.bilibili.com/video/{bvid}")
             if len(results) >= max_results:
                 break
         return results
