@@ -548,7 +548,21 @@ class DeepSeekService:
 
         for tool_call_id, result in results:
             self._add_tool_message(tool_call_id, result)
-        # NOTE: do NOT trim here — see submit_tool_result() for why.
+
+        # Validate: after adding tool results, any assistant(tc) that is NOT the
+        # last message must be followed by at least one "tool" role message.
+        # If not, history is corrupted (e.g., previous API call failed and left
+        # an orphaned assistant(tc)). Raise early to get a clear error instead
+        # of a cryptic API rejection.
+        for i, m in enumerate(self._chat_history):
+            if m.get("tool_calls") and i + 1 < len(self._chat_history):
+                next_msgs = self._chat_history[i + 1 :]
+                if not any(n.get("role") == "tool" for n in next_msgs):
+                    raise RuntimeError(
+                        "Chat history corrupted: assistant message with tool_calls "
+                        f"at index {i} is not followed by any tool messages. "
+                        f"History: {self._chat_history!r}"
+                    )
 
         def _call():
             resp = self.client.chat.completions.create(
