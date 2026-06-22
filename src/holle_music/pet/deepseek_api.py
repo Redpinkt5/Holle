@@ -412,12 +412,25 @@ class DeepSeekService:
         ]
 
     def _trim_history(self) -> None:
-        """Keep at most max_history rounds (user + assistant pairs)."""
+        """Keep at most max_history rounds (user + assistant pairs).
+
+        When removing a non-system message, also remove any following
+        tool messages that belong to it, to avoid orphaned tool messages.
+        """
         max_messages = self._max_history * 2 + 1  # +1 for system prompt
         while len(self._chat_history) > max_messages:
             for i, m in enumerate(self._chat_history):
                 if m["role"] != "system":
-                    del self._chat_history[i]
+                    # Collect indices to delete: this message + any following tool messages
+                    to_delete = [i]
+                    for j in range(i + 1, len(self._chat_history)):
+                        if self._chat_history[j]["role"] == "tool":
+                            to_delete.append(j)
+                        else:
+                            break
+                    # Delete in reverse order so indices stay valid
+                    for j in reversed(to_delete):
+                        del self._chat_history[j]
                     break
 
     # ── Chat ────────────────────────────────────────────────────────
@@ -484,7 +497,10 @@ class DeepSeekService:
             raise ValueError(_api_key_help())
 
         self._add_tool_message(tool_call_id, result)
-        self._trim_history()
+        # NOTE: do NOT trim here. _trim_history() removes oldest non-system
+        # messages which can orphan tool messages (delete the assistant that
+        # owns the tool_call). Trimming only happens at the START of chat()
+        # before the next user message is added.
 
         def _call():
             resp = self.client.chat.completions.create(
@@ -532,7 +548,7 @@ class DeepSeekService:
 
         for tool_call_id, result in results:
             self._add_tool_message(tool_call_id, result)
-        self._trim_history()
+        # NOTE: do NOT trim here — see submit_tool_result() for why.
 
         def _call():
             resp = self.client.chat.completions.create(
