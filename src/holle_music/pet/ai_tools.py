@@ -7,9 +7,12 @@ PetPlayer via IPC or direct method calls.
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
+from holle_music.bilibili_searcher import BilibiliSearcher, is_network_error
 from holle_music.minimax_api import MiniMaxService
+from holle_music.models import Song
 
 
 class AITools:
@@ -23,6 +26,7 @@ class AITools:
         self._player = player
         self._window = window
         self._last_search_results: list[dict] = []
+        self._last_bilibili_results: list[Song] = []
 
     def set_window(self, window: Any) -> None:
         """Set the pet window reference so color tools can trigger a redraw."""
@@ -199,6 +203,74 @@ class AITools:
             return "联网搜索未返回结果"
         return results
 
+    def _tool_search_bilibili(self, args: dict) -> str:
+        """Search Bilibili for audio."""
+        query = args.get("query", "").strip()
+        if not query:
+            return "搜索关键词为空"
+
+        try:
+            searcher = BilibiliSearcher()
+            songs = searcher.search(query, max_results=args.get("max_results", 10))
+        except Exception as exc:
+            return "无法连接网络搜索 B 站" if is_network_error(exc) else f"B 站搜索失败: {exc}"
+
+        self._last_bilibili_results = songs
+        self._last_search_results = songs
+
+        if not songs:
+            return f'B 站未找到 "{query}"'
+
+        lines = [f'B站搜索 "{query}" 结果 ({len(songs)} 首):']
+        for i, song in enumerate(songs[:10], 1):
+            lines.append(f"{i}. {song.title} - {song.artist}")
+        if len(songs) > 10:
+            lines.append(f"... 还有 {len(songs) - 10} 首")
+        lines.append("如果用户想播放其中一首，请调用 play_song 工具实际播放。")
+        return "\n".join(lines)
+
+    def _play_bilibili_song(self, song: Song) -> str:
+        from holle_music.online_cache import audio_path, is_cached
+
+        if is_cached(song.bvid):
+            cached = audio_path(song.bvid)
+            song.path = cached
+            self._player.play_song({
+                "path": str(cached),
+                "title": song.title,
+                "artist": song.artist,
+                "duration": song.duration,
+                "source": song.source,
+                "bvid": song.bvid,
+            })
+            return f"正在播放: {song.title} - {song.artist}"
+
+        if self._window:
+            self._window.show_response_bubble(f"{song.title} 正在下载...")
+
+        def _download_and_play():
+            try:
+                searcher = BilibiliSearcher()
+                cached = searcher.download_audio(song)
+                song.path = cached
+                self._player.play_song({
+                    "path": str(cached),
+                    "title": song.title,
+                    "artist": song.artist,
+                    "duration": song.duration,
+                    "source": song.source,
+                    "bvid": song.bvid,
+                })
+                if self._window:
+                    self._window.show_response_bubble(f"正在播放: {song.title} - {song.artist}")
+            except Exception as exc:
+                msg = "下载失败，请检查网络" if is_network_error(exc) else str(exc)
+                if self._window:
+                    self._window.show_response_bubble(f"{song.title} {msg}")
+
+        threading.Thread(target=_download_and_play, daemon=True).start()
+        return f"正在准备播放: {song.title} - {song.artist}"
+
     def _tool_play_song(self, args: dict) -> str:
         """Play a song by title (and optional artist)."""
         title = args.get("title", "").strip()
@@ -206,7 +278,15 @@ class AITools:
         if not title:
             return "歌曲标题为空"
 
-        # Try to match from recent local search results first
+        # Try Bilibili results first.
+        for song in self._last_bilibili_results:
+            s_title = (song.title or "").strip()
+            s_artist = (song.artist or "").strip()
+            if title.lower() in s_title.lower():
+                if not artist or artist.lower() in s_artist.lower():
+                    return self._play_bilibili_song(song)
+
+        # Existing local fallback...
         for song in self._last_search_results:
             s_title = (song.get("title") or "").strip()
             s_artist = (song.get("artist") or "").strip()
