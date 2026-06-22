@@ -14,6 +14,8 @@
 - 🔀 顺序 / 随机 / 单曲循环 播放模式
 - 🖼️ 自动提取并显示专辑封面
 - 💾 播放状态与设置持久化
+- 🔍 B 站音频搜索（`/search` 本地无结果时自动搜索 Bilibili）
+- 💾 B 站在线音频缓存与自动清理
 
 ## 安装方式
 
@@ -117,6 +119,8 @@ hollepet
 | `/color <颜色>` | 切换主题色（pink / blue / red / green / yellow / purple / orange / gray / brown / black / white / colorful） |
 | `/maincolor <light\|dark>` | 切换助手明暗主题 |
 | `/search <关键词>` | 搜索歌曲 |
+| `/cache` | 查看 B 站缓存占用 |
+| `/cache clear` | 清空 B 站缓存 |
 | `/scan <路径>` | 扫描文件夹添加到播放列表 |
 | `/help` | 查看帮助 |
 | `/quit` | 退出 |
