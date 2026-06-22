@@ -209,8 +209,14 @@ class PetCommandHandler:
         query = arg.strip()
         if not query:
             return "请输入搜索关键词，例如 /search 周杰伦"
+
+        # Try local first.
         result = self._tools.execute("search_local", {"query": query})
-        return result
+        if result and not result.startswith("本地未找到"):
+            return result
+
+        # Fallback to Bilibili.
+        return self._tools.execute("search_bilibili", {"query": query})
 
     def _cmd_color(self, arg: str) -> str:
         name = arg.strip().lower()
