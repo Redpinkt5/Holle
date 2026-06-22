@@ -126,21 +126,37 @@ class BilibiliSearcher:
         return results
 
     def _search_urls_bilibili(self, query: str, max_results: int) -> list[str]:
-        """Search Bilibili official API (no auth required)."""
-        import json
+        """Search Bilibili official API using curl (works in restricted networks).
 
-        import urllib.request
+        urllib cannot reach api.bilibili.com from some environments, but curl can.
+        Uses shell=True so curl inherits the system proxy from Windows.
+        Falls back to empty list if curl fails.
+        """
+        import json, subprocess
 
         encoded_query = quote(query, safe="")
         url = (
             f"https://api.bilibili.com/x/web-interface/search/type"
             f"?search_type=video&keyword={encoded_query}&page=1&pagesize={max_results}"
         )
-
+        cmd = (
+            f'curl -s -m 10 '
+            f'-H "User-Agent: Mozilla/5.0" '
+            f'-H "Referer: https://www.bilibili.com/" '
+            f'"{url}"'
+        )
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+            )
+            if result.returncode != 0 or not result.stdout:
+                return []
+            data = json.loads(result.stdout)
         except Exception:
             return []
 
