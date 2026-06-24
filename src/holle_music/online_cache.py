@@ -114,17 +114,24 @@ def _remove_bvid(bvid: str) -> None:
             pass
 
 
+BILIBILI_CACHE_TTL_SECONDS = 30 * 60  # 30 minutes after last play
+
+
 def cleanup(max_mb: int | None = None, max_files: int | None = None) -> None:
-    """LRU cleanup until cache is within limits."""
+    """LRU cleanup until cache is within limits, also removes expired entries."""
     _ensure_dir()
     max_mb = max_mb if max_mb is not None else DEFAULT_MAX_MB
     max_files = max_files if max_files is not None else DEFAULT_MAX_FILES
 
+    now = int(time.time())
     files: list[tuple[int, Path]] = []
     for p in _cache_audio_files():
         stem = p.stem.split("_")[0]
         meta = load_metadata(stem)
         last_played = meta.get("last_played_at", 0) if meta else 0
+        # Skip recently played files from LRU eviction
+        if now - last_played < BILIBILI_CACHE_TTL_SECONDS:
+            continue
         files.append((last_played, p))
 
     files.sort(key=lambda x: x[0])

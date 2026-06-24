@@ -201,7 +201,7 @@ class BubbleRenderer:
         x = PADDING
         y = (height - FONT_SIZE) // 2
 
-        # Draw selection highlight behind the text.
+        # Draw selection highlight behind the text (uses shimmer palette color).
         if text and selection is not None:
             start, end = sorted(selection)
             start = max(0, min(start, len(text)))
@@ -213,7 +213,7 @@ class BubbleRenderer:
                 sel_bottom = y + FONT_SIZE + 2
                 draw.rectangle(
                     [(sel_x, sel_top), (sel_x + sel_w, sel_bottom)],
-                    fill=ACCENT_COLOR + (180,),
+                    fill=self._cursor_color() + (180,),
                 )
 
         if text:

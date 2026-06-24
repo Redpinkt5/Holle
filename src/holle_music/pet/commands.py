@@ -132,6 +132,8 @@ class PetCommandHandler:
             return self._cmd_restore()
         if cmd == "mode":
             return self._cmd_mode(arg)
+        if cmd == "cache":
+            return self._cmd_cache(arg)
         if cmd == "quit":
             return self._cmd_quit()
         if cmd == "help":
@@ -340,6 +342,22 @@ class PetCommandHandler:
             return "已恢复全部歌单"
         except Exception as exc:
             return f"恢复歌单失败: {exc}"
+
+    def _cmd_cache(self, arg: str) -> str:
+        """Show or clear the Bilibili audio cache."""
+        from holle_music.online_cache import cache_info, clear
+
+        action = arg.strip().lower()
+        if action in ("clear", "清空", "清除"):
+            clear()
+            return "缓存已清空"
+        info = cache_info()
+        return (
+            f"B 站缓存: {info['file_count']} 个文件, "
+            f"{info['size_mb']} MB\n"
+            f"位置: ~/.holle_music/cache/bilibili/\n"
+            f"用法: /cache clear 清空"
+        )
 
     def _cmd_quit(self) -> str:
         try:

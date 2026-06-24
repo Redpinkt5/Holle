@@ -1,4 +1,5 @@
-import sys
+"""Tests for Bilibili search and audio download."""
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,66 @@ def test_extract_bvid_from_url():
     assert _extract_bvid("https://example.com") is None
 
 
+def test_search_parses_entries():
+    """search() falls back to DDGS when Bilibili API returns empty, resolving URLs to Song objects."""
+    searcher = BilibiliSearcher()
+
+    # Mock _search_songs_from_api (Bilibili API) to return empty so we fall through
+    # Mock _search_urls (DDGS fallback) to return a list of Song objects on ONE call
+    with patch.object(searcher, "_search_songs_from_api", return_value=[]):
+        with patch.object(searcher, "_search_urls") as mock_search_urls:
+            mock_search_urls.return_value = [
+                Song(
+                    path=Path(""),
+                    title="晴天 (web)",
+                    artist="UP主",
+                    duration=180.0,
+                    source="bilibili",
+                    bvid="BV1xx411c7mD",
+                    web_url="https://www.bilibili.com/video/BV1xx411c7mD",
+                    cover_url="https://cover.jpg",
+                ),
+                Song(
+                    path=Path(""),
+                    title="七里香 (web)",
+                    artist="UP主",
+                    duration=180.0,
+                    source="bilibili",
+                    bvid="BV1yy411c7mD",
+                    web_url="https://www.bilibili.com/video/BV1yy411c7mD",
+                    cover_url="https://cover.jpg",
+                ),
+            ]
+            results = searcher.search("周杰伦", max_results=2)
+
+    assert len(results) == 2
+    assert results[0].bvid == "BV1xx411c7mD"
+    assert results[0].title == "晴天 (web)"
+    assert results[0].source == "bilibili"
+
+
+def test_search_returns_empty_on_no_results():
+    """search() returns empty when both Bilibili API and DDGS find nothing."""
+    searcher = BilibiliSearcher()
+
+    def fake_ddgs(text, max_results):
+        return []
+
+    # Make Bilibili API and DDGS both return empty
+    with patch.object(searcher, "_search_songs_from_api", return_value=[]):
+        with patch("holle_music.bilibili_searcher.DDGS") as MockDDGS:
+            MockDDGS.return_value.__enter__.return_value.text.side_effect = fake_ddgs
+            results = searcher.search("xxxxxxxxxxxx")
+
+    assert results == []
+
+
+def test_song_from_url_skips_invalid():
+    """_song_from_url returns None for non-Bilibili URLs."""
+    searcher = BilibiliSearcher()
+    assert searcher._song_from_url("https://example.com") is None
+
+
 def make_ddgs_result(href):
     return {"href": href}
 
@@ -23,81 +84,3 @@ def make_ydl_info(title, uploader="UP主", duration=180, thumbnails=None):
         "duration": duration,
         "thumbnails": thumbnails or [{"url": "https://cover.jpg"}],
     }
-
-
-def test_search_parses_entries():
-    searcher = BilibiliSearcher()
-
-    # Make Bilibili API return empty so we fall through to DDGS
-    fake_bilibili_response = b'{"code": 0, "data": {"result": []}}'
-    ddgs_results = [
-        make_ddgs_result("https://www.bilibili.com/video/BV1xx411c7mD"),
-        make_ddgs_result("https://www.bilibili.com/video/BV1yy411c7mD"),
-    ]
-
-    def fake_ddgs(text, max_results):
-        return ddgs_results
-
-    mock_ydl = MagicMock()
-    mock_ydl.extract_info.side_effect = [
-        make_ydl_info("晴天"),
-        make_ydl_info("七里香"),
-    ]
-
-    # Mock _search_urls_bilibili to return empty (fall through to DDGS)
-    with patch.object(searcher, "_search_urls_bilibili", return_value=[]):
-        with patch("holle_music.bilibili_searcher.DDGS") as MockDDGS:
-            MockDDGS.return_value.__enter__.return_value.text.side_effect = fake_ddgs
-            with patch.object(searcher, "_song_from_url") as mock_song:
-                mock_song.side_effect = [
-                    Song(
-                        path=Path(""),
-                        title="晴天 (web)",
-                        artist="UP主",
-                        duration=180.0,
-                        source="bilibili",
-                        bvid="BV1xx411c7mD",
-                        web_url="https://www.bilibili.com/video/BV1xx411c7mD",
-                        cover_url="https://cover.jpg",
-                    ),
-                    Song(
-                        path=Path(""),
-                        title="七里香 (web)",
-                        artist="UP主",
-                        duration=180.0,
-                        source="bilibili",
-                        bvid="BV1yy411c7mD",
-                        web_url="https://www.bilibili.com/video/BV1yy411c7mD",
-                        cover_url="https://cover.jpg",
-                    ),
-                ]
-                results = searcher.search("周杰伦", max_results=2)
-
-    assert len(results) == 2
-    assert results[0].bvid == "BV1xx411c7mD"
-    assert results[0].title == "晴天 (web)"
-    assert results[0].source == "bilibili"
-
-
-def test_search_returns_empty_on_no_results():
-    searcher = BilibiliSearcher()
-
-    def fake_ddgs(text, max_results):
-        return []
-
-    # Mock _search_urls_bilibili to return empty, DDGS also empty
-    with patch.object(searcher, "_search_urls_bilibili", return_value=[]):
-        with patch("holle_music.bilibili_searcher.DDGS") as MockDDGS:
-            MockDDGS.return_value.__enter__.return_value.text.side_effect = fake_ddgs
-            results = searcher.search("xxxxxxxxxxxx")
-
-    assert results == []
-
-
-def test_song_from_url_skips_invalid():
-    searcher = BilibiliSearcher()
-    # Non-Bilibili URL should return None (bvid extraction fails)
-    import sys
-    mock_yt_dlp = MagicMock()
-    with patch.dict(sys.modules, {"yt_dlp": mock_yt_dlp}):
-        assert searcher._song_from_url("https://example.com") is None

@@ -220,7 +220,7 @@ class TUITools:
 
         import threading
         threading.Thread(target=_download_and_play, daemon=True).start()
-        return f"正在准备播放: {song.title} - {song.artist}"
+        return f"正在准备播放: {song.title} - {song.artist} 稍等一会..."
 
     def _tool_play_song(self, args: dict) -> str:
         """Play a song by title (and optional artist)."""

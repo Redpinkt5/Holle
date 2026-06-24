@@ -80,15 +80,18 @@ class AITools:
         if not results:
             return response
 
+        def _song_title(song) -> str:
+            return getattr(song, "title", None) or (song.get("title") if hasattr(song, "get") else "") or ""
+
+        def _song_artist(song) -> str:
+            return getattr(song, "artist", None) or (song.get("artist") if hasattr(song, "get") else "") or ""
+
         # If multiple results all match the query as an artist, load the artist playlist.
         lowered_query = query.lower()
         if (
             len(results) > 1
             and lowered_query
-            and all(
-                lowered_query in (song.get("artist") or "").lower()
-                for song in results
-            )
+            and all(lowered_query in _song_artist(s).lower() for s in results)
         ):
             return self.execute("play_artist", {"artist": query})
 
@@ -96,7 +99,7 @@ class AITools:
         for source in (text, response):
             source_lower = source.lower()
             for song in results:
-                if (song.get("title") or "").lower() in source_lower:
+                if _song_title(song).lower() in source_lower:
                     chosen = song
                     break
             if chosen:
@@ -106,11 +109,11 @@ class AITools:
             chosen = results[0]
 
         play_result = self.execute(
-            "play_song", {"title": chosen.get("title", "")}
+            "play_song", {"title": _song_title(chosen)}
         )
-        if play_result.startswith(("正在播放", "尝试播放")):
-            if response:
-                return f"{response}\n\n{play_result}"
+        if play_result.startswith(("正在播放", "正在准备播放", "尝试播放")):
+            # Return the actual play status; do not let the AI's original
+            # "already playing" text override reality.
             return play_result
         return response
 
@@ -270,7 +273,7 @@ class AITools:
             return f"正在播放: {song.title} - {song.artist}"
 
         if self._window:
-            self._window.show_response_bubble(f"{song.title} 正在下载...")
+            self._window.show_response_bubble(f"{song.title} 正在缓冲音频...")
 
         def _download_and_play():
             try:
@@ -287,7 +290,7 @@ class AITools:
                 if self._window:
                     self._window.show_response_bubble(f"正在播放: {song.title} - {song.artist}")
             except Exception as exc:
-                msg = "下载失败，请检查网络" if is_network_error(exc) else str(exc)
+                msg = "缓冲失败，请检查网络" if is_network_error(exc) else str(exc)
                 if self._window:
                     self._window.show_response_bubble(f"{song.title} {msg}")
 
@@ -311,8 +314,11 @@ class AITools:
 
         # Existing local fallback...
         for song in self._last_search_results:
-            s_title = (song.get("title") or "").strip()
-            s_artist = (song.get("artist") or "").strip()
+            # Support both Song objects and plain dicts
+            s_title = getattr(song, "title", None) or (song.get("title") if hasattr(song, "get") else "") or ""
+            s_artist = getattr(song, "artist", None) or (song.get("artist") if hasattr(song, "get") else "") or ""
+            s_title = s_title.strip()
+            s_artist = s_artist.strip()
             if title.lower() in s_title.lower():
                 if not artist or artist.lower() in s_artist.lower():
                     self._player.play_song(song)

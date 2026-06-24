@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -22,6 +23,29 @@ from holle_music.online_cache import (
     save_metadata,
     touch,
 )
+
+
+def _ensure_ffmpeg() -> str:
+    """Return path to ffmpeg executable, auto-installing imageio-ffmpeg if needed."""
+    import shutil
+
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except ImportError:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "imageio-ffmpeg", "-q"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
 
 
 # BV 号正则：以 BV 开头，后跟 10 个字母/数字
@@ -86,23 +110,19 @@ class BilibiliSearcher:
 
         # Fallback to ddgs
         try:
-            songs = self._search_urls_ddgs(query, max_results)
+            songs = self._search_urls(query, max_results)
         except RuntimeError:
             return []
         return songs
 
 
-    def _search_urls(self, query: str, max_results: int) -> list[str]:
-        """Search Bilibili via official API (fast, comprehensive).
+    def _search_urls(self, query: str, max_results: int) -> list[Song]:
+        """Search Bilibili URLs via DDGS and resolve each to Song objects.
 
-        Falls back to DuckDuckGo only if Bilibili API fails.
+        This is the fallback path when Bilibili API is unavailable.
+        Returns Song objects (not URL strings) so it plugs directly into
+        the search() return type.
         """
-        # Try Bilibili official API first — it has complete coverage
-        urls = self._search_urls_bilibili(query, max_results)
-        if urls:
-            return urls
-
-        # Fallback to DuckDuckGo if Bilibili API is unavailable
         if DDGS is None:
             raise RuntimeError("搜索失败: 无法连接 Bilibili，且 ddgs 也未安装")
 
@@ -123,35 +143,35 @@ class BilibiliSearcher:
                 return []
             raise RuntimeError(f"搜索失败: {exc}") from exc
 
-        results: list[str] = []
+        songs: list[Song] = []
         for r in entries:
             href = r.get("href", "")
-            if _extract_bvid(href):
-                results.append(href)
-            if len(results) >= max_results:
+            if not _extract_bvid(href):
+                continue
+            song = self._song_from_url(href)
+            if song:
+                songs.append(song)
+            if len(songs) >= max_results:
                 break
-        return results
+        return songs
 
     def _search_songs_from_api(self, query: str, max_results: int) -> list[Song]:
         """Search Bilibili API and return Song objects with metadata from the API.
 
         Uses curl (shell=True to inherit WinINET proxy). Does NOT use yt-dlp for search,
         so it works even when yt-dlp is blocked by HTTP 412.
-        """
-        import json, subprocess
 
-        encoded_query = quote(query, safe="")
-        url = (
-            f"https://api.bilibili.com/x/web-interface/search/type"
-            f"?search_type=video&keyword={encoded_query}&page=1&pagesize={max_results}"
-        )
-        cmd = (
-            f'curl -s -m 12 '
-            f'-H "User-Agent: Mozilla/5.0" '
-            f'-H "Referer: https://www.bilibili.com/" '
-            f'"{url}"'
-        )
-        try:
+        Tries the newer ``search/all`` endpoint first (less likely to return a
+        validation page), then falls back to ``search/type``.
+        """
+
+        def _try_endpoint(api_url: str) -> list[dict]:
+            cmd = (
+                f'curl -s -m 12 '
+                f'-H "User-Agent: Mozilla/5.0" '
+                f'-H "Referer: https://www.bilibili.com/" '
+                f'"{api_url}"'
+            )
             result = subprocess.run(
                 cmd,
                 shell=True,
@@ -162,15 +182,35 @@ class BilibiliSearcher:
             )
             if result.returncode != 0 or not result.stdout:
                 return []
-            data = json.loads(result.stdout)
-        except Exception:
-            return []
+            try:
+                data = json.loads(result.stdout)
+            except Exception:
+                return []
+            if data.get("code") != 0:
+                return []
+            return data.get("data", {}).get("result", {}).get("video", []) or []
 
-        if data.get("code") != 0:
-            return []
+        encoded_query = quote(query, safe="")
+
+        # Primary: search/all (composite search) — returns JSON more reliably
+        url_all = (
+            f"https://api.bilibili.com/x/web-interface/search/all"
+            f"?keyword={encoded_query}"
+        )
+        video_results = _try_endpoint(url_all)
+
+        # Fallback: search/type (original dedicated video search)
+        if not video_results:
+            url_type = (
+                f"https://api.bilibili.com/x/web-interface/search/type"
+                f"?search_type=video&keyword={encoded_query}&page=1&pagesize={max_results}"
+            )
+            results = _try_endpoint(url_type)
+            if results and isinstance(results, list):
+                video_results = results
 
         songs: list[Song] = []
-        for item in (data.get("data", {}).get("result") or []):
+        for item in video_results:
             bvid = item.get("bvid", "")
             if not bvid:
                 continue
@@ -178,8 +218,7 @@ class BilibiliSearcher:
             if not title:
                 continue
             # Clean HTML tag from title (Bilibili returns <em class="keyword">)
-            import re as _re
-            title = _re.sub(r"<[^>]+>", "", title)
+            title = re.sub(r"<[^>]+>", "", title)
             author = item.get("author", "未知UP主") or "未知UP主"
             duration_secs = item.get("duration", 0)
             # Duration format may be "3:45" or seconds
@@ -196,7 +235,6 @@ class BilibiliSearcher:
                     duration_secs = 0
             else:
                 duration_secs = int(duration_secs) if duration_secs else 0
-            arcurl = item.get("arcurl", "") or ""
             web_url = f"https://www.bilibili.com/video/{bvid}"
             song = Song(
                 path=Path(""),
@@ -232,8 +270,75 @@ class BilibiliSearcher:
 
 
 
+    def get_audio_url(self, song: Song) -> str:
+        """Resolve a Bilibili video to its audio stream URL (no download).
+
+        Returns the audio URL if available, otherwise raises RuntimeError.
+        """
+        if not song.bvid:
+            raise ValueError("Song 缺少 bvid")
+
+        bvid = song.bvid
+        headers = (
+            '-H "User-Agent: Mozilla/5.0" '
+            '-H "Referer: https://www.bilibili.com/" '
+            '-H "Origin: https://www.bilibili.com"'
+        )
+
+        def _curl_get_json(api_url: str, timeout: int = 20) -> dict:
+            cmd = f'curl -s -m {timeout - 3} {headers} "{api_url}"'
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+            )
+            if result.returncode != 0 or not result.stdout:
+                raise RuntimeError("网络或接口错误")
+            try:
+                return json.loads(result.stdout)
+            except Exception as exc:
+                raise RuntimeError(f"JSON解析错误 ({exc})") from exc
+
+        # Get cid from video page API
+        page_api = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
+        page_info = _curl_get_json(page_api, timeout=20)
+        if page_info.get("code") != 0:
+            raise RuntimeError(
+                f"获取视频信息失败：B站返回 {page_info.get('message', page_info.get('code'))}"
+            )
+
+        cid = page_info.get("data", {}).get("cid", "")
+        if not cid:
+            raise RuntimeError("获取视频信息失败：缺少 cid")
+
+        # Get the audio URL from Bilibili playurl API
+        playurl_api = (
+            f"https://api.bilibili.com/x/player/playurl"
+            f"?bvid={bvid}&cid={cid}&qn=80&fnval=0&fnver=0&otype=json"
+        )
+        playinfo = _curl_get_json(playurl_api, timeout=20)
+        if playinfo.get("code") != 0:
+            raise RuntimeError(
+                f"获取音频地址失败：B站返回 {playinfo.get('message', playinfo.get('code'))}"
+            )
+
+        durl_list = playinfo.get("data", {}).get("durl", [{}])
+        if not durl_list:
+            raise RuntimeError("获取音频地址失败：未找到音频流")
+
+        audio_url = durl_list[0].get("url", "")
+        if not audio_url:
+            raise RuntimeError("获取音频地址失败：音频URL为空")
+        return audio_url
+
     def download_audio(self, song: Song) -> Path:
-        """Download audio for a Song into cache and return local path."""
+        """Download audio for a Song into cache and return local path.
+
+        Uses curl (not yt-dlp) to avoid HTTP 412 blocking.
+        """
         if not song.bvid:
             raise ValueError("Song 缺少 bvid")
 
@@ -242,55 +347,82 @@ class BilibiliSearcher:
             touch(song.bvid)
             return cached
 
-        self._notify(f"正在下载: {song.title}")
+        self._notify(f"正在缓冲: {song.title}")
 
-        try:
-            import yt_dlp
-        except ImportError as exc:
-            raise RuntimeError("yt-dlp 未安装") from exc
+        bvid = song.bvid
+        audio_url = self.get_audio_url(song)
+        headers = (
+            '-H "User-Agent: Mozilla/5.0" '
+            '-H "Referer: https://www.bilibili.com/" '
+            '-H "Origin: https://www.bilibili.com"'
+        )
 
         cache_dir()
-        out_path = str(CACHE_DIR / f"{song.bvid}_0.m4a")
+        out_path = str(CACHE_DIR / f"{bvid}_0.m4a")
         part_path = out_path + ".part"
 
-        url = song.web_url or f"https://www.bilibili.com/video/{song.bvid}"
-        cmd = [
-            sys.executable, "-m", "yt_dlp",
-            "--format", "bestaudio[ext=m4a]/bestaudio/best",
-            "--output", part_path,
-            "--quiet", "--no-warnings", "--no-progress",
-            url,
-        ]
-
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self._download_procs[song.bvid] = proc
+        cmd_download = (
+            f'curl -s -m 300 {headers} '
+            f'-o "{part_path}" '
+            f'"{audio_url}"'
+        )
+        proc = subprocess.Popen(
+            cmd_download,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self._download_procs[bvid] = proc
 
         try:
-            stdout, stderr = proc.communicate()
+            _, stderr_bytes = proc.communicate(timeout=330)
             if self._cancel_event.is_set():
-                raise RuntimeError("下载已取消")
+                raise RuntimeError("缓冲已取消")
             if proc.returncode != 0:
-                raise RuntimeError(f"下载失败: {stderr.decode() or 'yt-dlp exited non-zero'}")
+                stderr_text = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+                raise RuntimeError(f"缓冲失败: {stderr_text or f'curl exited {proc.returncode}'}")
         finally:
-            self._download_procs.pop(song.bvid, None)
+            self._download_procs.pop(bvid, None)
 
         # Rename .part to final
         import os
         if os.path.exists(part_path):
             os.rename(part_path, out_path)
-        elif not os.path.exists(out_path):
-            # yt-dlp might output with different extension
-            for p in CACHE_DIR.glob(f"{song.bvid}_0.*"):
-                if p.suffix not in (".json", ".part"):
-                    out_path = str(p)
-                    break
 
-        cached = audio_path(song.bvid)
+        # Convert m4a to mp3 so pygame can play it
+        final_path = Path(out_path)
+        if final_path.suffix.lower() == ".m4a":
+            mp3_path = final_path.with_suffix(".mp3")
+            try:
+                ffmpeg = _ensure_ffmpeg()
+                self._notify(f"正在转码: {song.title}")
+                cmd_convert = [
+                    ffmpeg,
+                    "-y",
+                    "-i", str(final_path),
+                    "-vn",
+                    "-ar", "44100",
+                    "-ac", "2",
+                    "-b:a", "192k",
+                    str(mp3_path),
+                ]
+                subprocess.run(cmd_convert, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+                if mp3_path.exists():
+                    try:
+                        final_path.unlink()
+                    except Exception:
+                        pass
+                    out_path = str(mp3_path)
+            except Exception as exc:
+                # If conversion fails, keep the original m4a and let the caller decide
+                self._notify(f"转码失败，使用原始音频: {exc}")
+
+        cached = audio_path(bvid)
         if not cached:
-            raise RuntimeError("下载后未找到音频文件")
+            raise RuntimeError("缓冲后未找到音频文件")
 
         save_metadata(
-            song.bvid,
+            bvid,
             {
                 "title": song.title,
                 "artist": song.artist,
@@ -300,7 +432,7 @@ class BilibiliSearcher:
             },
         )
         cleanup_from_settings()
-        self._notify(f"{song.title} 下载完成")
+        self._notify(f"{song.title} 缓冲完成")
         return cached
 
     def cancel(self) -> None:

@@ -24,3 +24,4 @@ venv/
 .holle_settings.json
 .holle_color.json
 *pet_pos.json
+cookies.txt
